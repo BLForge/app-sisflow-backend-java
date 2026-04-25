@@ -1,0 +1,34 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "id": 123456789,
+    "number": 42,
+    "state": "open",
+    "title": "Fix: Corrige bug no login #1234",
+    "body": "Esta PR corrige o bug reportado no ticket #1234",
+    "merged": false,
+    "html_url": "https://github.com/empresa-xyz/sistema-vendas/pull/42",
+    "head": {
+      "ref": "feature/fix-login-bug-#1234",
+      "sha": "abc123def456"
+    },
+    "base": {
+      "ref": "main",
+      "sha": "def456abc123"
+    },
+    "user": {
+      "login": "developer",
+      "id": 12345
+    }
+  },
+  "repository": {
+    "id": 987654321,
+    "name": "sistema-vendas",
+    "full_name": "empresa-xyz/sistema-vendas"
+  },
+  "sender": {
+    "login": "developer",
+    "id": 12345
+  }
+}
