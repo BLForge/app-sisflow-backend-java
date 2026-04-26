@@ -17,7 +17,6 @@ import java.util.UUID;
 
 /**
  * Filter to extract user ID from JWT token and set context.
- * Uses a default tenant ID since Supabase tokens don't contain tenant information.
  * Skips public endpoints that don't require authentication.
  */
 @Slf4j
@@ -73,7 +72,7 @@ public class TenantIsolationFilter implements Filter {
                         // Set user context
                         tenantContext.setCurrentUser(userId);
                         
-                        // For now, use a default tenant ID since Supabase tokens don't contain tenant info
+                        // Use a default tenant ID for now
                         // TODO: Implement proper tenant management
                         UUID defaultTenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
                         tenantContext.setCurrentTenant(defaultTenantId);

@@ -87,22 +87,22 @@ echo "==> [6/6] Configure environment variables"
 echo "    Enter your environment values (press Enter to accept the default shown in brackets):"
 echo ""
 
-read -rp "  SPRING_DATASOURCE_URL [jdbc:postgresql://db.wlwluotgprraezzgnnbb.supabase.co:5432/postgres?sslmode=require]: " DS_URL
-DS_URL="${DS_URL:-jdbc:postgresql://db.wlwluotgprraezzgnnbb.supabase.co:5432/postgres?sslmode=require}"
+read -rp "  SPRING_DATASOURCE_URL [jdbc:postgresql://localhost:5432/postgres]: " DS_URL
+DS_URL="${DS_URL:-jdbc:postgresql://localhost:5432/postgres}"
 
 read -rp "  SPRING_DATASOURCE_USERNAME [postgres]: " DS_USER
 DS_USER="${DS_USER:-postgres}"
 
 read -rp "  SPRING_DATASOURCE_PASSWORD: " DS_PASS
 
-read -rp "  SUPABASE_JWT_SECRET: " JWT_SECRET
+read -rp "  JWT_SECRET: " JWT_SECRET
 echo ""
 
 cat > "$ENV_FILE" <<EOF
 SPRING_DATASOURCE_URL=${DS_URL}
 SPRING_DATASOURCE_USERNAME=${DS_USER}
 SPRING_DATASOURCE_PASSWORD=${DS_PASS}
-SUPABASE_JWT_SECRET=${JWT_SECRET}
+JWT_SECRET=${JWT_SECRET}
 EOF
 
 chmod 600 "$ENV_FILE"

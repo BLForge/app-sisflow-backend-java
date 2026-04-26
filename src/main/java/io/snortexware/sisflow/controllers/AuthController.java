@@ -2,12 +2,9 @@ package io.snortexware.sisflow.controllers;
 
 import io.snortexware.sisflow.dto.LoginRequest;
 import io.snortexware.sisflow.dto.RegisterRequest;
-import io.snortexware.sisflow.dto.ResetPasswordRequest;
-import io.snortexware.sisflow.services.SupabaseAuthService;
+import io.snortexware.sisflow.services.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,54 +15,50 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final SupabaseAuthService authService;
-
-    @Value("${app.base.url:https://ticket.lucasmoreira.cc}")
-    private String appBaseUrl;
+    private final AuthService authService;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
-        JSONObject result = authService.signIn(req.getEmail(), req.getPassword());
-        return ResponseEntity.ok(Map.of(
-            "accessToken", result.optString("access_token"),
-            "refreshToken", result.optString("refresh_token"),
-            "expiresIn", result.optInt("expires_in", 3600)
-        ));
+        return ResponseEntity.ok(authService.signIn(req.getEmail(), req.getPassword()));
     }
 
     @PostMapping("/register")
     public ResponseEntity<Map<String, Object>> register(@Valid @RequestBody RegisterRequest req) {
-        String redirectTo = appBaseUrl + "/email-confirmed";
-        JSONObject result = authService.signUp(req.getEmail(), req.getPassword(), req.getFullName(), redirectTo);
+        return ResponseEntity.ok(authService.signUp(req.getEmail(), req.getPassword(), req.getFullName()));
+    }
 
-        if (result.has("access_token")) {
-            return ResponseEntity.ok(Map.of(
-                "status", "confirmed",
-                "accessToken", result.optString("access_token"),
-                "refreshToken", result.optString("refresh_token")
-            ));
-        }
-        return ResponseEntity.ok(Map.of("status", "confirmation_required"));
+    @GetMapping("/confirm-email")
+    public ResponseEntity<Map<String, Object>> confirmEmail(@RequestParam String token) {
+        return ResponseEntity.ok(authService.confirmEmail(token));
+    }
+
+    @PostMapping("/resend-confirmation")
+    public ResponseEntity<Void> resendConfirmation(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        if (email == null || email.isBlank()) return ResponseEntity.badRequest().build();
+        authService.resendConfirmation(email);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
-        String redirectTo = req.getRedirectTo() != null ? req.getRedirectTo() : appBaseUrl + "/reset-password";
-        authService.resetPassword(req.getEmail(), redirectTo);
-        return ResponseEntity.ok(Map.of("status", "email_sent"));
+    public ResponseEntity<Void> requestPasswordReset(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        if (email == null || email.isBlank()) return ResponseEntity.badRequest().build();
+        authService.requestPasswordReset(email);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/reset-password/confirm")
+    public ResponseEntity<Void> confirmPasswordReset(@RequestBody Map<String, String> body) {
+        authService.resetPassword(body.get("token"), body.get("password"));
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/refresh")
     public ResponseEntity<Map<String, Object>> refresh(@RequestBody Map<String, String> body) {
         String refreshToken = body.get("refreshToken");
-        if (refreshToken == null || refreshToken.isBlank()) {
+        if (refreshToken == null || refreshToken.isBlank())
             return ResponseEntity.badRequest().body(Map.of("error", "refreshToken required"));
-        }
-        JSONObject result = authService.refreshToken(refreshToken);
-        return ResponseEntity.ok(Map.of(
-            "accessToken", result.optString("access_token"),
-            "refreshToken", result.optString("refresh_token"),
-            "expiresIn", result.optInt("expires_in", 3600)
-        ));
+        return ResponseEntity.ok(authService.refresh(refreshToken));
     }
 }
