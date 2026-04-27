@@ -6,312 +6,164 @@ import io.snortexware.sisflow.entities.UserRole;
 import io.snortexware.sisflow.repositories.RoleRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.repositories.UserRoleRepository;
+import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * User Management Controller - Admin only Allows system administrators to
- * manage users and their roles
- */
 @Slf4j
 @RestController
 @RequestMapping("/admin/users")
+@RequiredArgsConstructor
 public class UserManagementController {
 
-	private final UserProfileRepository userProfileRepository;
-	private final UserRoleRepository userRoleRepository;
-	private final RoleRepository roleRepository;
-	private final AuthorizationService authorizationService;
+    private final UserProfileRepository userProfileRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final RoleRepository roleRepository;
+    private final AuthorizationService authorizationService;
+    private final TenantContext tenantContext;
 
-	public UserManagementController(UserProfileRepository userProfileRepository, UserRoleRepository userRoleRepository,
-			RoleRepository roleRepository, AuthorizationService authorizationService) {
-		this.userProfileRepository = userProfileRepository;
-		this.userRoleRepository = userRoleRepository;
-		this.roleRepository = roleRepository;
-		this.authorizationService = authorizationService;
-	}
+    @GetMapping
+    public ResponseEntity<List<Map<String, Object>>> listUsers(@AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
 
-	/**
-	 * List all users with their roles (Admin only)
-	 */
-	@GetMapping
-	public ResponseEntity<List<Map<String, Object>>> listUsers(@AuthenticationPrincipal UUID callerId) {
-		if (!isAuthorized(callerId)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
+        UUID tenantId = tenantContext.getCurrentTenant();
+        List<UserProfile> users = tenantId != null
+                ? userProfileRepository.findByTenant_Id(tenantId)
+                : userProfileRepository.findAll();
 
-		try {
-			List<UserProfile> users = userProfileRepository.findAll();
-			List<Map<String, Object>> userList = users.stream().map(user -> {
-				Map<String, Object> userMap = new HashMap<>();
-				userMap.put("id", user.getId());
-				userMap.put("name", user.getName());
-				userMap.put("avatarUrl", user.getAvatarUrl());
-				userMap.put("createdAt", user.getCreatedAt());
+        List<Map<String, Object>> result = users.stream().map(user -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", user.getId());
+            m.put("name", user.getName());
+            m.put("email", user.getEmail());
+            m.put("avatarUrl", user.getAvatarUrl());
+            m.put("createdAt", user.getCreatedAt());
+            List<Map<String, Object>> roles = userRoleRepository.findActiveByUserId(user.getId()).stream()
+                    .map(ur -> Map.<String, Object>of(
+                            "id", ur.getRole().getId(),
+                            "code", ur.getRole().getCode(),
+                            "name", ur.getRole().getName(),
+                            "hierarchyLevel", ur.getRole().getHierarchyLevel()))
+                    .collect(Collectors.toList());
+            m.put("roles", roles);
+            m.put("highestRoleLevel", roles.stream().mapToInt(r -> (Integer) r.get("hierarchyLevel")).max().orElse(-1));
+            return m;
+        }).collect(Collectors.toList());
 
-				// Get user roles
-				List<UserRole> userRoles = userRoleRepository.findActiveByUserId(user.getId());
-				List<Map<String, Object>> roles = userRoles.stream().map(ur -> {
-					Map<String, Object> roleMap = new HashMap<>();
-					roleMap.put("id", ur.getRole().getId());
-					roleMap.put("code", ur.getRole().getCode());
-					roleMap.put("name", ur.getRole().getName());
-					roleMap.put("hierarchyLevel", ur.getRole().getHierarchyLevel());
-					return roleMap;
-				}).collect(Collectors.toList());
+        return ResponseEntity.ok(result);
+    }
 
-				userMap.put("roles", roles);
-				userMap.put("highestRoleLevel",
-						roles.stream().mapToInt(r -> (Integer) r.get("hierarchyLevel")).max().orElse(-1));
+    @GetMapping("/roles")
+    public ResponseEntity<List<Role>> getRoles(@AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+        // Tenant admins can only see roles up to their own level
+        int callerLevel = authorizationService.getCurrentUserHierarchyLevel(callerId);
+        List<Role> roles = roleRepository.findAll().stream()
+                .filter(r -> r.getHierarchyLevel() <= callerLevel)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(roles);
+    }
 
-				return userMap;
-			}).collect(Collectors.toList());
+    @PostMapping("/{userId}/roles/{roleId}")
+    @Transactional
+    public ResponseEntity<Void> assignRole(@PathVariable UUID userId, @PathVariable UUID roleId,
+            @AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+        assertSameTenant(callerId, userId);
 
-			return ResponseEntity.ok(userList);
-		} catch (Exception e) {
-			log.error("Error listing users", e);
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-		}
-	}
+        Role role = roleRepository.findById(roleId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Role not found"));
 
-	/**
-	 * Get all available roles (Admin only)
-	 */
-	@GetMapping("/roles")
-	public ResponseEntity<List<Role>> getRoles(@AuthenticationPrincipal UUID callerId) {
-		if (!isAuthorized(callerId)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
+        // Prevent privilege escalation: can't assign a role higher than your own
+        authorizationService.validateCanAssignRole(callerId, role.getHierarchyLevel());
 
-		try {
-			List<Role> roles = roleRepository.findAll();
-			return ResponseEntity.ok(roles);
-		} catch (Exception e) {
-			log.error("Error getting roles", e);
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-		}
-	}
+        UserProfile user = userProfileRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-	/**
-	 * Create a new user (Admin only)
-	 */
-	@PostMapping
-	@Transactional
-	public ResponseEntity<Map<String, Object>> createUser(@Valid @RequestBody CreateUserRequest request,
-			@AuthenticationPrincipal UUID callerId) {
-		if (!isAuthorized(callerId)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
+        userRoleRepository.save(UserRole.builder()
+                .user(user).role(role).isActive(true)
+                .assignedAt(OffsetDateTime.now()).assignedBy(callerId)
+                .createdAt(OffsetDateTime.now()).build());
 
-		Map<String, Object> response = new HashMap<>();
+        return ResponseEntity.noContent().build();
+    }
 
-		try {
-			// Check if user already exists
-			if (userProfileRepository.existsById(UUID.fromString(request.userId))) {
-				response.put("error", "User already exists");
-				return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
-			}
+    @DeleteMapping("/{userId}/roles/{roleId}")
+    @Transactional
+    public ResponseEntity<Void> removeRole(@PathVariable UUID userId, @PathVariable UUID roleId,
+            @AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+        assertSameTenant(callerId, userId);
 
-			// Create user profile
-			UserProfile userProfile = UserProfile.builder().id(UUID.fromString(request.userId)).name(request.name)
-					.avatarUrl(request.avatarUrl).role(UserProfile.Role.agent) // Default role
-					.createdAt(OffsetDateTime.now()).build();
+        UserRole userRole = userRoleRepository.findActiveByUserIdAndRoleId(userId, roleId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User role not found"));
 
-			userProfile = userProfileRepository.save(userProfile);
+        userRole.setIsActive(false);
+        userRole.setRevokedAt(OffsetDateTime.now());
+        userRole.setRevokedBy(callerId);
+        userRoleRepository.save(userRole);
 
-			// Assign role if specified
-			if (request.roleId != null) {
-				Role role = roleRepository.findById(UUID.fromString(request.roleId))
-						.orElseThrow(() -> new RuntimeException("Role not found"));
+        return ResponseEntity.noContent().build();
+    }
 
-				UserRole userRole = UserRole.builder().id(UUID.randomUUID()).user(userProfile).role(role).isActive(true)
-						.assignedAt(OffsetDateTime.now()).assignedBy(callerId).createdAt(OffsetDateTime.now()).build();
+    @PutMapping("/{userId}")
+    @Transactional
+    public ResponseEntity<Void> updateUser(@PathVariable UUID userId,
+            @Valid @RequestBody UpdateUserRequest request,
+            @AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+        assertSameTenant(callerId, userId);
 
-				userRoleRepository.save(userRole);
-			}
+        UserProfile user = userProfileRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-			response.put("success", true);
-			response.put("message", "User created successfully");
-			response.put("userId", userProfile.getId());
+        if (request.name() != null) user.setName(request.name());
+        if (request.avatarUrl() != null) user.setAvatarUrl(request.avatarUrl());
+        userProfileRepository.save(user);
 
-			log.info("Admin {} created user {}", callerId, userProfile.getId());
-			return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.noContent().build();
+    }
 
-		} catch (Exception e) {
-			log.error("Error creating user", e);
-			response.put("error", "Failed to create user");
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-		}
-	}
+    @DeleteMapping("/{userId}")
+    @Transactional
+    public ResponseEntity<Void> deleteUser(@PathVariable UUID userId,
+            @AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+        if (userId.equals(callerId))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot delete your own account");
+        assertSameTenant(callerId, userId);
+        userProfileRepository.deleteById(userId);
+        return ResponseEntity.noContent().build();
+    }
 
-	/**
-	 * Assign role to user (Admin only)
-	 */
-	@PostMapping("/{userId}/roles/{roleId}")
-	public ResponseEntity<Map<String, Object>> assignRole(@PathVariable String userId,
-			@PathVariable String roleId,
-			@AuthenticationPrincipal UUID callerId) {
+    // ── helpers ───────────────────────────────────────────────────────────────
 
-		if (!isAuthorized(callerId)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
+    private void requireModerator(UUID callerId) {
+        if (callerId == null || !authorizationService.isModeratorOrAbove(callerId))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
+    }
 
-		Map<String, Object> response = new HashMap<>();
+    private void assertSameTenant(UUID callerId, UUID targetUserId) {
+        UUID callerTenant = tenantContext.getCurrentTenant();
+        if (callerTenant == null) return; // system_admin has no tenant restriction
+        userProfileRepository.findById(targetUserId).ifPresent(target -> {
+            if (target.getTenant() != null && !target.getTenant().getId().equals(callerTenant))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        });
+    }
 
-		UUID userUuid;
-		UUID roleUuid;
-
-		try {
-			userUuid = UUID.fromString(userId);
-			roleUuid = UUID.fromString(roleId);
-		} catch (IllegalArgumentException e) {
-			response.put("error", "Invalid UUID format");
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-		}
-
-		UserProfile user = userProfileRepository.findById(userUuid).orElse(null);
-
-		if (user == null) {
-			response.put("error", "User not found");
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-		}
-
-		Role role = roleRepository.findById(roleUuid).orElse(null);
-
-		if (role == null) {
-			response.put("error", "Role not found");
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-		}
-
-		OffsetDateTime now = OffsetDateTime.now();
-
-		UserRole userRole = UserRole.builder().id(UUID.randomUUID()).user(user).role(role).isActive(true)
-				.assignedAt(now).assignedBy(callerId).createdAt(now).build();
-
-		userRoleRepository.save(userRole);
-
-		response.put("success", true);
-		response.put("message", "Role assigned successfully");
-		return ResponseEntity.ok(response);
-	}
-
-	/**
-	 * Remove role from user (Admin only)
-	 */
-	@DeleteMapping("/{userId}/roles/{roleId}")
-	@Transactional
-	public ResponseEntity<Map<String, Object>> removeRole(@PathVariable String userId, @PathVariable String roleId,
-			@AuthenticationPrincipal UUID callerId) {
-		if (!isAuthorized(callerId)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
-
-		Map<String, Object> response = new HashMap<>();
-
-		try {
-			UUID userUuid = UUID.fromString(userId);
-			UUID roleUuid = UUID.fromString(roleId);
-
-			// Find and deactivate the user role
-			List<UserRole> userRoles = userRoleRepository.findActiveByUserId(userUuid);
-			
-			UserRole userRole = userRoleRepository
-				    .findActiveByUserIdAndRoleId(userUuid, roleUuid)
-				    .orElseThrow(() -> new RuntimeException("User role not found"));
-			
-			userRole.setIsActive(false);
-			userRole.setRevokedAt(OffsetDateTime.now());
-			userRole.setRevokedBy(callerId);
-
-			userRoleRepository.save(userRole);
-
-			response.put("success", true);
-			response.put("message", "Role removed successfully");
-
-			log.info("Admin {} removed role {} from user {}", callerId, roleId, userId);
-			return ResponseEntity.ok(response);
-
-		} catch (Exception e) {
-			log.error("Error removing role", e);
-			response.put("error", "Failed to remove role");
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-		}
-	}
-
-	/**
-	 * Update user profile (Admin only)
-	 */
-	@PutMapping("/{userId}")
-	@Transactional
-	public ResponseEntity<Map<String, Object>> updateUser(@PathVariable String userId,
-			@Valid @RequestBody UpdateUserRequest request, @AuthenticationPrincipal UUID callerId) {
-		if (!isAuthorized(callerId)) {
-			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-		}
-
-		Map<String, Object> response = new HashMap<>();
-
-		try {
-			UUID userUuid = UUID.fromString(userId);
-			UserProfile user = userProfileRepository.findById(userUuid)
-					.orElseThrow(() -> new RuntimeException("User not found"));
-
-			if (request.name != null) {
-				user.setName(request.name);
-			}
-			if (request.avatarUrl != null) {
-				user.setAvatarUrl(request.avatarUrl);
-			}
-
-			userProfileRepository.save(user);
-
-			response.put("success", true);
-			response.put("message", "User updated successfully");
-
-			log.info("Admin {} updated user {}", callerId, userId);
-			return ResponseEntity.ok(response);
-
-		} catch (Exception e) {
-			log.error("Error updating user", e);
-			response.put("error", "Failed to update user");
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-		}
-	}
-
-	private boolean isAuthorized(UUID callerId) {
-		if (callerId == null) {
-			return false;
-		}
-
-		try {
-			return authorizationService.isAdminOrAbove(callerId);
-		} catch (Exception e) {
-			log.error("Authorization check failed for user: {}", callerId, e);
-			return false;
-		}
-	}
-
-	// DTOs
-	public record CreateUserRequest(@NotBlank String userId, @NotBlank String name, String avatarUrl, String roleId) {
-	}
-
-	public record UpdateUserRequest(String name, String avatarUrl) {
-	}
+    public record UpdateUserRequest(String name, String avatarUrl) {}
 }
