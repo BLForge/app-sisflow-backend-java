@@ -18,80 +18,39 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/knowledge-base")
 @RequiredArgsConstructor
-public class KnowledgeBaseController {
+public class KnowledgeBaseController extends BaseController {
 
     private final KnowledgeBaseService knowledgeBaseService;
     private final AuthorizationService authorizationService;
 
-    @GetMapping
-    public ResponseEntity<List<KnowledgeBase>> list(
-            @RequestParam(required = false) String q,
-            @AuthenticationPrincipal UUID callerId
-    ) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
+    @Override
+    protected AuthorizationService authorizationService() { return authorizationService; }
 
-        // SECURITY: Only authenticated users can view knowledge base
+    @GetMapping
+    public ResponseEntity<List<KnowledgeBase>> list(@RequestParam(required = false) String q,
+                                                    @AuthenticationPrincipal UUID callerId) {
+        requireDeveloper(callerId);
         return ResponseEntity.ok(knowledgeBaseService.list(q));
     }
 
     @PostMapping
-    public ResponseEntity<KnowledgeBase> create(
-            @Valid @RequestBody CreateKnowledgeBaseRequest request,
-            @AuthenticationPrincipal UUID callerId
-    ) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        // SECURITY: Only developers and above can create knowledge base articles
-        try {
-            authorizationService.validateCanManageKnowledgeBase(callerId);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-
-        KnowledgeBase article = knowledgeBaseService.create(callerId, request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(article);
+    public ResponseEntity<KnowledgeBase> create(@Valid @RequestBody CreateKnowledgeBaseRequest request,
+                                                @AuthenticationPrincipal UUID callerId) {
+        requireDeveloper(callerId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(knowledgeBaseService.create(callerId, request));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<KnowledgeBase> update(
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateKnowledgeBaseRequest request,
-            @AuthenticationPrincipal UUID callerId
-    ) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        // SECURITY: Only developers and above can update knowledge base articles
-        try {
-            authorizationService.validateCanManageKnowledgeBase(callerId);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-
+    public ResponseEntity<KnowledgeBase> update(@PathVariable UUID id,
+                                                @Valid @RequestBody UpdateKnowledgeBaseRequest request,
+                                                @AuthenticationPrincipal UUID callerId) {
+        requireDeveloper(callerId);
         return ResponseEntity.ok(knowledgeBaseService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(
-            @PathVariable UUID id,
-            @AuthenticationPrincipal UUID callerId
-    ) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        // SECURITY: Only developers and above can delete knowledge base articles
-        try {
-            authorizationService.validateCanManageKnowledgeBase(callerId);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-
+    public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
+        requireDeveloper(callerId);
         knowledgeBaseService.delete(id);
         return ResponseEntity.noContent().build();
     }

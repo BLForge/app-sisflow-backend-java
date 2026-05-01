@@ -1,6 +1,6 @@
 package io.snortexware.sisflow.security;
 
-import io.snortexware.sisflow.repositories.TenantRepository;
+import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.services.JwtService;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
@@ -20,17 +20,18 @@ public class TenantIsolationFilter implements Filter {
 
     private final JwtService jwtService;
     private final TenantContext tenantContext;
-    private final TenantRepository tenantRepository;
+    private final UserProfileRepository userProfileRepository;
 
     private static final String[] PUBLIC_PATHS = {
-            "/auth/", "/health", "/files/", "/swagger-ui/",
+            "/auth/", "/health", "/files/upload", "/swagger-ui/",
             "/v3/api-docs/", "/github/webhook", "/error", "/tenants/register"
     };
 
-    public TenantIsolationFilter(JwtService jwtService, TenantContext tenantContext, TenantRepository tenantRepository) {
+    public TenantIsolationFilter(JwtService jwtService, TenantContext tenantContext,
+                                  UserProfileRepository userProfileRepository) {
         this.jwtService = jwtService;
         this.tenantContext = tenantContext;
-        this.tenantRepository = tenantRepository;
+        this.userProfileRepository = userProfileRepository;
     }
 
     @Override
@@ -44,19 +45,19 @@ public class TenantIsolationFilter implements Filter {
                 return;
             }
 
-            // Resolve tenant from subdomain
-            String domain = extractSubdomain(req);
-            if (domain != null) {
-                tenantRepository.findByDomain(domain).ifPresent(t ->
-                        tenantContext.setCurrentTenant(t.getId()));
-            }
-
-            // Resolve user from JWT
             String auth = req.getHeader("Authorization");
             if (auth != null && auth.startsWith("Bearer ")) {
                 try {
                     UUID userId = jwtService.getUserIdFromToken(auth.substring(7));
-                    if (userId != null) tenantContext.setCurrentUser(userId);
+                    if (userId != null) {
+                        tenantContext.setCurrentUser(userId);
+                        // Derive tenant from the user's own DB record — never trust client headers
+                        userProfileRepository.findById(userId).ifPresent(user -> {
+                            if (user.getTenant() != null) {
+                                tenantContext.setCurrentTenant(user.getTenant().getId());
+                            }
+                        });
+                    }
                 } catch (Exception e) {
                     log.debug("JWT parse failed: {}", e.getMessage());
                 }
@@ -65,28 +66,7 @@ public class TenantIsolationFilter implements Filter {
             chain.doFilter(request, response);
         } finally {
             tenantContext.clear();
-            log.debug("Context cleared after request");
         }
-    }
-
-    private String extractSubdomain(HttpServletRequest req) {
-        // 1. Explicit header (set by frontend)
-        String header = req.getHeader("X-Tenant-Domain");
-        if (header != null && !header.isBlank()) return header.trim();
-
-        // 2. Extract from Host: acme.localhost → acme, acme.sisflow.com → acme
-        String host = req.getHeader("Host");
-        if (host != null) {
-            host = host.split(":")[0];
-            String[] parts = host.split("\\.");
-            if (parts.length >= 2) {
-                String sub = parts[0];
-                if (!sub.equals("www") && !sub.equals("localhost") && !sub.equals("sisflow")) {
-                    return sub;
-                }
-            }
-        }
-        return null;
     }
 
     private boolean isPublicPath(String path) {

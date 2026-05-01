@@ -1,7 +1,6 @@
 -- =============================================================================
 -- V001__init.sql — Full schema + seed data
 -- =============================================================================
-SET search_path TO public;
 
 -- ── tenants ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tenants (
@@ -167,70 +166,76 @@ CREATE INDEX IF NOT EXISTS idx_resource_permissions_user     ON resource_permiss
 
 -- ── agent_groups ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS agent_groups (
-    id          UUID PRIMARY KEY,
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id   UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name        VARCHAR(255) NOT NULL,
     description TEXT,
     is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMPTZ  NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_agent_groups_tenant_id ON agent_groups(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_agent_groups_is_active ON agent_groups(is_active);
 
 -- ── agent_group_members ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS agent_group_members (
-    agent_group_id UUID NOT NULL REFERENCES agent_groups(id) ON DELETE CASCADE,
-    user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at     TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (agent_group_id, user_id)
+    group_id    UUID NOT NULL REFERENCES agent_groups(id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (group_id, user_id)
 );
 
 -- ── slas ──────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS slas (
-    id                      UUID PRIMARY KEY,
-    name                    VARCHAR(255) NOT NULL,
-    description             TEXT,
-    response_time_minutes   INT,
-    resolution_time_minutes INT,
-    is_active               BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at              TIMESTAMPTZ  NOT NULL,
-    updated_at              TIMESTAMPTZ
+    id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id                UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name                     VARCHAR(255) NOT NULL,
+    response_time_hours      INT          NOT NULL,
+    resolution_time_hours    INT          NOT NULL,
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_slas_is_active ON slas(is_active);
+CREATE INDEX IF NOT EXISTS idx_slas_tenant_id ON slas(tenant_id);
 
 -- ── ticket_statuses ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ticket_statuses (
-    id         UUID PRIMARY KEY,
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id  UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name       VARCHAR(100) NOT NULL,
     color      VARCHAR(7)   NOT NULL,
     is_default BOOLEAN      NOT NULL DEFAULT FALSE,
     is_closed  BOOLEAN      NOT NULL DEFAULT FALSE,
     sort_order INT          NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_ticket_statuses_tenant_id  ON ticket_statuses(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_statuses_sort_order ON ticket_statuses(sort_order);
 
 -- ── ticket_types ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ticket_types (
-    id          UUID PRIMARY KEY,
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id   UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name        VARCHAR(100) NOT NULL,
     description TEXT,
     icon        VARCHAR(50),
-    color       VARCHAR(7),
-    created_at  TIMESTAMPTZ  NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_ticket_types_tenant_id ON ticket_types(tenant_id);
 
 -- ── ticket_priorities ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ticket_priorities (
-    id              UUID PRIMARY KEY,
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name            VARCHAR(100) NOT NULL,
-    color           VARCHAR(7),
-    sla_multiplier  NUMERIC(5,2) NOT NULL DEFAULT 1.0,
+    color           VARCHAR(7)   NOT NULL,
+    sla_multiplier  NUMERIC(4,2) NOT NULL DEFAULT 1.0,
     sort_order      INT          NOT NULL DEFAULT 0,
-    created_at      TIMESTAMPTZ  NOT NULL,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_ticket_priorities_tenant_id  ON ticket_priorities(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_priorities_sort_order ON ticket_priorities(sort_order);
 
 -- ── categories ────────────────────────────────────────────────────────────────
@@ -243,34 +248,34 @@ CREATE TABLE IF NOT EXISTS categories (
     updated_at  TIMESTAMPTZ
 );
 
--- ── projects ──────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS projects (
-    id                    UUID PRIMARY KEY,
-    name                  VARCHAR(255) NOT NULL,
-    description           TEXT,
-    customer_id           UUID         NOT NULL REFERENCES customers(id),
-    github_repository     VARCHAR(255),
-    github_owner          VARCHAR(255),
-    pull_request_status_id UUID REFERENCES ticket_statuses(id),
-    status                VARCHAR(50)  NOT NULL DEFAULT 'active',
-    created_at            TIMESTAMPTZ  NOT NULL,
-    updated_at            TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_projects_customer_id ON projects(customer_id);
-
 -- ── systems ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS systems (
-    id          UUID PRIMARY KEY,
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name        VARCHAR(255) NOT NULL,
     description TEXT,
-    project_id  UUID         NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    customer_id UUID         NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     version     VARCHAR(100),
     url         VARCHAR(500),
     status      VARCHAR(50)  NOT NULL DEFAULT 'active',
-    created_at  TIMESTAMPTZ  NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_systems_project_id ON systems(project_id);
+CREATE INDEX IF NOT EXISTS idx_systems_customer_id ON systems(customer_id);
+
+-- ── projects ──────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS projects (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name                   VARCHAR(255) NOT NULL,
+    description            TEXT,
+    system_id              UUID         NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+    github_repository      VARCHAR(255),
+    github_owner           VARCHAR(255),
+    pull_request_status_id UUID REFERENCES ticket_statuses(id),
+    status                 VARCHAR(50)  NOT NULL DEFAULT 'active',
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_projects_system_id ON projects(system_id);
 
 -- ── project_members ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS project_members (
@@ -330,6 +335,36 @@ CREATE INDEX IF NOT EXISTS idx_tickets_code        ON tickets(code);
 CREATE INDEX IF NOT EXISTS idx_tickets_project_id  ON tickets(project_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_system_id   ON tickets(system_id);
 
+-- ── ticket_categories (join table) ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ticket_categories (
+    ticket_id   UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (ticket_id, category_id)
+);
+
+-- ── knowledge_base ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS knowledge_base (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id    UUID         NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    title        VARCHAR(255) NOT NULL,
+    content      TEXT,
+    category_id  UUID REFERENCES categories(id),
+    author_id    UUID REFERENCES users(id),
+    is_published BOOLEAN     NOT NULL DEFAULT FALSE,
+    views        INT         NOT NULL DEFAULT 0,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_base_tenant_id    ON knowledge_base(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_base_is_published ON knowledge_base(is_published);
+
+-- ── ticket_knowledge_base (join table) ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ticket_knowledge_base (
+    ticket_id  UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    article_id UUID NOT NULL REFERENCES knowledge_base(id) ON DELETE CASCADE,
+    PRIMARY KEY (ticket_id, article_id)
+);
+
 -- ── ticket_interactions ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ticket_interactions (
     id               UUID PRIMARY KEY,
@@ -364,19 +399,7 @@ CREATE TABLE IF NOT EXISTS ticket_attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_attachments_ticket_id ON ticket_attachments(ticket_id);
 
--- ── knowledge_base ────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS knowledge_base (
-    id           UUID PRIMARY KEY,
-    title        VARCHAR(255) NOT NULL,
-    content      TEXT,
-    category_id  UUID REFERENCES categories(id),
-    author_id    UUID REFERENCES users(id),
-    is_published BOOLEAN     NOT NULL DEFAULT FALSE,
-    views        INT         NOT NULL DEFAULT 0,
-    created_at   TIMESTAMPTZ NOT NULL,
-    updated_at   TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_knowledge_base_is_published ON knowledge_base(is_published);
+
 
 -- ── ticket_homologations ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ticket_homologations (
@@ -393,15 +416,11 @@ CREATE INDEX IF NOT EXISTS idx_ticket_homologations_ticket_id ON ticket_homologa
 
 -- ── github_configuration ──────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS github_configuration (
-    id             UUID PRIMARY KEY,
-    owner          VARCHAR(255) NOT NULL,
-    repository     VARCHAR(255) NOT NULL,
-    access_token   VARCHAR(500),
-    webhook_url    VARCHAR(500),
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id     UUID        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     webhook_secret VARCHAR(255),
-    project_id     UUID REFERENCES projects(id) ON DELETE CASCADE,
-    is_active      BOOLEAN     NOT NULL DEFAULT TRUE,
-    created_at     TIMESTAMPTZ NOT NULL,
+    enabled        BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_github_configuration_project_id ON github_configuration(project_id);

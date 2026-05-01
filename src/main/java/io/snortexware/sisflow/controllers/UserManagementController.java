@@ -1,24 +1,31 @@
 package io.snortexware.sisflow.controllers;
 
 import io.snortexware.sisflow.entities.Role;
+import io.snortexware.sisflow.entities.Tenant;
 import io.snortexware.sisflow.entities.UserProfile;
 import io.snortexware.sisflow.entities.UserRole;
 import io.snortexware.sisflow.repositories.RoleRepository;
+import io.snortexware.sisflow.repositories.TenantRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.repositories.UserRoleRepository;
 import io.snortexware.sisflow.security.TenantContext;
+import io.snortexware.sisflow.services.AuthService;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,8 +39,49 @@ public class UserManagementController {
     private final UserProfileRepository userProfileRepository;
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
+    private final TenantRepository tenantRepository;
     private final AuthorizationService authorizationService;
+    private final AuthService authService;
     private final TenantContext tenantContext;
+    private final BCryptPasswordEncoder passwordEncoder;
+
+    @PostMapping
+    @Transactional
+    public ResponseEntity<Map<String, Object>> createUser(
+            @Valid @RequestBody CreateUserRequest request,
+            @AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+
+        if (userProfileRepository.findByEmail(request.email()).isPresent())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "E-mail já cadastrado");
+
+        UUID tenantId = tenantContext.getCurrentTenant();
+        Tenant tenant = tenantId != null
+                ? tenantRepository.findById(tenantId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found"))
+                : null;
+
+        UserProfile user = UserProfile.builder()
+                .id(UUID.randomUUID())
+                .email(request.email())
+                .name(request.name())
+                .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString())) // unusable random password
+                .tenant(tenant)
+                .type(UserProfile.UserType.agent)
+                .role(UserProfile.Role.agent)
+                .emailConfirmed(true)
+                .createdAt(OffsetDateTime.now())
+                .build();
+
+        userProfileRepository.save(user);
+        authService.requestPasswordReset(user.getEmail()); // user sets their own password on first access
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                "id", user.getId(),
+                "email", user.getEmail(),
+                "name", user.getName()
+        ));
+    }
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> listUsers(@AuthenticationPrincipal UUID callerId) {
@@ -149,6 +197,17 @@ public class UserManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{userId}/reset-password")
+    public ResponseEntity<Void> resetPassword(@PathVariable UUID userId,
+            @AuthenticationPrincipal UUID callerId) {
+        requireModerator(callerId);
+        assertSameTenant(callerId, userId);
+        UserProfile user = userProfileRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        authService.requestPasswordReset(user.getEmail());
+        return ResponseEntity.noContent().build();
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private void requireModerator(UUID callerId) {
@@ -166,4 +225,9 @@ public class UserManagementController {
     }
 
     public record UpdateUserRequest(String name, String avatarUrl) {}
+
+    public record CreateUserRequest(
+            @NotBlank @Email String email,
+            @NotBlank String name
+    ) {}
 }

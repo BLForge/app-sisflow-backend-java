@@ -17,6 +17,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     Optional<Ticket> findByCode(Long code);
     boolean existsByCode(Long code);
     boolean existsByCodeAndIdNot(Long code, UUID id);
+    boolean existsByCodeAndCustomer_Tenant_Id(Long code, UUID tenantId);
+    boolean existsByCodeAndIdNotAndCustomer_Tenant_Id(Long code, UUID id, UUID tenantId);
 
     @Query("SELECT COALESCE(MAX(t.code), 1000) FROM Ticket t")
     Long findMaxCode();

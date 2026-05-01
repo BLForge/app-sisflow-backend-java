@@ -68,6 +68,26 @@ public class UserProfileController {
         return ResponseEntity.ok(roles);
     }
 
+    @GetMapping("/customer/{customerId}")
+    public ResponseEntity<List<UserProfile>> listCustomerUsers(@PathVariable UUID customerId,
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!authorizationService.isModeratorOrAbove(callerId))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
+        return ResponseEntity.ok(userProfileRepository.findByCustomerId(customerId));
+    }
+
+    @PostMapping("/customer/{customerId}")
+    @Transactional
+    public ResponseEntity<UserProfile> linkUserToCustomer(@PathVariable UUID customerId,
+            @Valid @RequestBody LinkUserRequest request,
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!authorizationService.isModeratorOrAbove(callerId))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
+        return ResponseEntity.ok(userProfileService.linkUserToCustomer(customerId, request.userId().toString()));
+    }
+
     @PutMapping("/me")
     @Transactional
     public ResponseEntity<UserProfile> update(@AuthenticationPrincipal UUID callerId,
@@ -137,6 +157,7 @@ public class UserProfileController {
     }
 
     public record SyncRequest(String name, String avatarUrl) {}
+    public record LinkUserRequest(@NotNull UUID userId) {}
     public record CreateUserProfileRequest(
             @NotBlank String userId,
             @NotNull UserProfile.Role role) {}

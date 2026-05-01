@@ -1,6 +1,5 @@
 package io.snortexware.sisflow.security;
 
-import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -15,16 +14,10 @@ import java.util.UUID;
 public class RLSContextInterceptor implements HandlerInterceptor {
 
     private final TenantContext tenantContext;
-    private final AuthorizationService authorizationService;
     private final JdbcTemplate jdbcTemplate;
 
-    public RLSContextInterceptor(
-            TenantContext tenantContext,
-            AuthorizationService authorizationService,
-            JdbcTemplate jdbcTemplate
-    ) {
+    public RLSContextInterceptor(TenantContext tenantContext, JdbcTemplate jdbcTemplate) {
         this.tenantContext = tenantContext;
-        this.authorizationService = authorizationService;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -61,24 +54,20 @@ public class RLSContextInterceptor implements HandlerInterceptor {
      */
     private String getUserRoleString(UUID userId) {
         try {
-            Integer hierarchyLevel = authorizationService.getCurrentUserHierarchyLevel(userId);
-            
-            if (hierarchyLevel >= 4) {
-                return "system_admin";
-            } else if (hierarchyLevel >= 3) {
-                return "tenant_admin";
-            } else if (hierarchyLevel >= 2) {
-                return "moderator";
-            } else if (hierarchyLevel >= 1) {
-                return "developer";
-            } else if (hierarchyLevel >= 0) {
-                return "client";
-            }
+            Integer level = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(r.hierarchy_level), -1) FROM user_roles ur " +
+                "JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? AND ur.is_active = true",
+                Integer.class, userId);
+            if (level == null || level < 0) return "client";
+            if (level >= 4) return "system_admin";
+            if (level >= 3) return "tenant_admin";
+            if (level >= 2) return "moderator";
+            if (level >= 1) return "developer";
+            return "client";
         } catch (Exception e) {
             log.debug("Error getting user role: {}", e.getMessage());
+            return "client";
         }
-        
-        return "client"; // Default to client role
     }
 
     @Override
