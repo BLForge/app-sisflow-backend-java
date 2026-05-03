@@ -105,6 +105,21 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationException(
+            org.springframework.web.bind.MethodArgumentNotValidException ex,
+            WebRequest request) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> e.getField() + ": " + e.getDefaultMessage())
+                .collect(java.util.stream.Collectors.joining(", "));
+        Map<String, Object> response = new HashMap<>();
+        response.put("timestamp", OffsetDateTime.now());
+        response.put("status", HttpStatus.BAD_REQUEST.value());
+        response.put("message", message);
+        response.put("path", request.getDescription(false).replace("uri=", ""));
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
     public ResponseEntity<Map<String, Object>> handleResponseStatusException(
             org.springframework.web.server.ResponseStatusException ex,

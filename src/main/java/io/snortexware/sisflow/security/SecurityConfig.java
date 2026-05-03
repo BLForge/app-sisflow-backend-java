@@ -30,6 +30,9 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    @Value("${cors.allowed.origin-patterns:}")
+    private String allowedOriginPatterns;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
@@ -38,6 +41,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(request -> {
                     var config = new org.springframework.web.cors.CorsConfiguration();
                     config.setAllowedOrigins(java.util.Arrays.asList(allowedOrigins.split(",")));
+                    if (!allowedOriginPatterns.isBlank())
+                        config.setAllowedOriginPatterns(java.util.Arrays.asList(allowedOriginPatterns.split(",")));
                     config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     config.setAllowedHeaders(java.util.List.of("*"));
                     config.setAllowCredentials(true);
@@ -45,7 +50,7 @@ public class SecurityConfig {
                 }))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/**", "/health", "/files/**", "/swagger-ui/**", "/v3/api-docs/**", "/github/webhook").permitAll()
+                        .requestMatchers("/auth/**", "/health", "/tenants/register", "/files/upload", "/swagger-ui/**", "/v3/api-docs/**", "/github/webhook").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(localhostOnlyFilter,

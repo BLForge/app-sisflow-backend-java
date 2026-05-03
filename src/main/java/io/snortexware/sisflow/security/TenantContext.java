@@ -34,11 +34,7 @@ public class TenantContext {
      * Get the current tenant ID for this thread.
      */
     public UUID getCurrentTenant() {
-        UUID tenant = tenantContext.get();
-        if (tenant == null) {
-            throw new UnauthorizedException("No tenant context found. Request must be authenticated.");
-        }
-        return tenant;
+        return tenantContext.get(); // null means no tenant context (system_admin)
     }
 
     /**
@@ -71,11 +67,7 @@ public class TenantContext {
      * Get the current user ID for this thread.
      */
     public UUID getCurrentUser() {
-        UUID user = userContext.get();
-        if (user == null) {
-            throw new UnauthorizedException("No user context found. Request must be authenticated.");
-        }
-        return user;
+        return userContext.get(); // null means unauthenticated
     }
 
     /**

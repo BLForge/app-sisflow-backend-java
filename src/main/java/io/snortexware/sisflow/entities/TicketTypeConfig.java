@@ -19,6 +19,10 @@ public class TicketTypeConfig {
     @Column(columnDefinition = "uuid", updatable = false, nullable = false)
     private UUID id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Tenant tenant;
+
     @Column(name = "name", nullable = false)
     private String name;
 

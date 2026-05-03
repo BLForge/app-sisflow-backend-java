@@ -5,6 +5,7 @@ import io.snortexware.sisflow.dto.TransferTicketRequest;
 import io.snortexware.sisflow.dto.UpdateTicketRequest;
 import io.snortexware.sisflow.entities.Ticket;
 import io.snortexware.sisflow.repositories.TicketRepository;
+import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.services.AuthorizationService;
 import io.snortexware.sisflow.services.TicketService;
 import jakarta.validation.Valid;
@@ -23,27 +24,35 @@ public class TicketController {
     private final TicketService ticketService;
     private final TicketRepository ticketRepository;
     private final AuthorizationService authorizationService;
+    private final TenantContext tenantContext;
 
-    public TicketController(TicketService ticketService, TicketRepository ticketRepository, AuthorizationService authorizationService) {
+    public TicketController(TicketService ticketService, TicketRepository ticketRepository,
+                             AuthorizationService authorizationService, TenantContext tenantContext) {
         this.ticketService = ticketService;
         this.ticketRepository = ticketRepository;
         this.authorizationService = authorizationService;
+        this.tenantContext = tenantContext;
     }
 
     @GetMapping("/check-code")
     public ResponseEntity<Boolean> checkCode(
-            @RequestParam Long code, 
+            @RequestParam Long code,
             @RequestParam(required = false) UUID excludeId,
-            @AuthenticationPrincipal UUID callerId
-    ) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        UUID tenantId = tenantContext.getCurrentTenant();
+        boolean taken;
+        if (tenantId != null) {
+            taken = excludeId != null
+                    ? ticketRepository.existsByCodeAndIdNotAndCustomer_Tenant_Id(code, excludeId, tenantId)
+                    : ticketRepository.existsByCodeAndCustomer_Tenant_Id(code, tenantId);
+        } else {
+            taken = excludeId != null
+                    ? ticketRepository.existsByCodeAndIdNot(code, excludeId)
+                    : ticketRepository.existsByCode(code);
         }
-        
-        boolean available = excludeId != null
-            ? !ticketRepository.existsByCodeAndIdNot(code, excludeId)
-            : !ticketRepository.existsByCode(code);
-        return ResponseEntity.ok(available);
+        return ResponseEntity.ok(!taken);
     }
 
     @PostMapping

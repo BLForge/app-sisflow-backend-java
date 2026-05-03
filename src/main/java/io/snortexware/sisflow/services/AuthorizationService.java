@@ -318,34 +318,18 @@ public class AuthorizationService {
      * Validate that user can manage roles.
      */
     public void validateCanManageRoles(UUID userId) {
-        if (userId == null) {
-            throw new UnauthorizedException("Authentication required");
-        }
-        if (!isAdminOrAbove(userId)) {
-            log.warn("User {} attempted to manage roles without admin role", userId);
-            throw new UnauthorizedException("Only admins can manage roles");
-        }
-
-        // For now, we'll allow admin role management without specific permissions
-        // since the permission system might not be fully set up yet
-        log.info("User {} managing roles (admin level {})", userId, getCurrentUserHierarchyLevel(userId));
+        if (userId == null) throw new UnauthorizedException("Authentication required");
+        if (!isModeratorOrAbove(userId))
+            throw new UnauthorizedException("Only moderators and above can manage roles");
     }
 
     /**
      * Validate that user can manage permissions.
      */
     public void validateCanManagePermissions(UUID userId) {
-        if (userId == null) {
-            throw new UnauthorizedException("Authentication required");
-        }
-        if (!isAdminOrAbove(userId)) {
-            log.warn("User {} attempted to manage permissions without admin role", userId);
-            throw new UnauthorizedException("Only admins can manage permissions");
-        }
-
-        // For now, we'll allow admin permission management without specific permissions
-        // since the permission system might not be fully set up yet
-        log.info("User {} managing permissions (admin level {})", userId, getCurrentUserHierarchyLevel(userId));
+        if (userId == null) throw new UnauthorizedException("Authentication required");
+        if (!isModeratorOrAbove(userId))
+            throw new UnauthorizedException("Only moderators and above can manage permissions");
     }
 
     /**
@@ -459,23 +443,13 @@ public class AuthorizationService {
      * A user can only assign roles at or below their own hierarchy level.
      */
     public void validateCanAssignRole(UUID assignerId, Integer targetRoleLevel) {
-        if (assignerId == null) {
-            throw new UnauthorizedException("Authentication required");
-        }
-        
+        if (assignerId == null) throw new UnauthorizedException("Authentication required");
+
         Integer assignerLevel = getCurrentUserHierarchyLevel(assignerId);
-
         if (assignerLevel < targetRoleLevel) {
-            log.warn("User {} (level {}) attempted to assign role with level {}", 
+            log.warn("User {} (level {}) attempted to assign role with level {}",
                 assignerId, assignerLevel, targetRoleLevel);
-            throw new UnauthorizedException(
-                "You can only assign roles at or below your hierarchy level"
-            );
-        }
-
-        if (!hasPermission(assignerId, "role:assign")) {
-            log.warn("User {} attempted to assign role without permission", assignerId);
-            throw new UnauthorizedException("You do not have permission to assign roles");
+            throw new UnauthorizedException("You can only assign roles at or below your hierarchy level");
         }
     }
 }

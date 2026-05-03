@@ -14,6 +14,7 @@ import io.snortexware.sisflow.repositories.SlaRepository;
 import io.snortexware.sisflow.repositories.TicketRepository;
 import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class TicketService {
 
     private final TicketRepository ticketRepository;
@@ -33,22 +35,6 @@ public class TicketService {
     private final TicketStatusConfigRepository statusRepository;
     private final AuditService auditService;
     private final TicketInteractionService ticketInteractionService;
-
-    public TicketService(TicketRepository ticketRepository,
-                         UserProfileRepository userProfileRepository,
-                         CustomerRepository customerRepository,
-                         SlaRepository slaRepository,
-                         TicketStatusConfigRepository statusRepository,
-                         AuditService auditService,
-                         TicketInteractionService ticketInteractionService) {
-        this.ticketRepository = ticketRepository;
-        this.userProfileRepository = userProfileRepository;
-        this.customerRepository = customerRepository;
-        this.slaRepository = slaRepository;
-        this.statusRepository = statusRepository;
-        this.auditService = auditService;
-        this.ticketInteractionService = ticketInteractionService;
-    }
 
     @Transactional
     public Ticket createTicket(CreateTicketRequest req, UUID callerId) {

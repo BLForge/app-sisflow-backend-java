@@ -4,6 +4,7 @@ import io.snortexware.sisflow.dto.CreateCustomerRequest;
 import io.snortexware.sisflow.dto.UpdateCustomerRequest;
 import io.snortexware.sisflow.entities.Customer;
 import io.snortexware.sisflow.repositories.CustomerRepository;
+import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -25,10 +26,13 @@ public class CustomerController {
 
     private final CustomerRepository customerRepository;
     private final AuthorizationService authorizationService;
+    private final TenantContext tenantContext;
 
-    public CustomerController(CustomerRepository customerRepository, AuthorizationService authorizationService) {
+    public CustomerController(CustomerRepository customerRepository, AuthorizationService authorizationService,
+                               TenantContext tenantContext) {
         this.customerRepository = customerRepository;
         this.authorizationService = authorizationService;
+        this.tenantContext = tenantContext;
     }
 
     @PostMapping
@@ -73,36 +77,14 @@ public class CustomerController {
 
     @GetMapping
     public ResponseEntity<List<Customer>> list(@AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        // Check if user has permission to view customers
-        try {
-            // Only admins can view all customers
-            if (authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.ok(customerRepository.findAll());
-            } else {
-                // Non-admin users get empty list for now
-                return ResponseEntity.ok(List.of());
-            }
-        } catch (Exception e) {
-            // If authorization service fails, return empty list for security
-            return ResponseEntity.ok(List.of());
-        }
-    }
-    
-    private boolean canUserAccessCustomer(Customer customer, UUID userId) {
-        if (userId == null) {
-            return false;
-        }
-        
-        try {
-            // Only admins can access customers
-            return authorizationService.isAdminOrAbove(userId);
-        } catch (Exception e) {
-            return false;
-        }
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!authorizationService.isAdminOrAbove(callerId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        UUID tenantId = tenantContext.getCurrentTenant();
+        List<Customer> customers = tenantId != null
+                ? customerRepository.findByTenant_Id(tenantId)
+                : customerRepository.findAll(); // system_admin only
+        return ResponseEntity.ok(customers);
     }
 
     @PutMapping("/{id}")

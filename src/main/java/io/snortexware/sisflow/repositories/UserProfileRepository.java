@@ -8,6 +8,7 @@ import java.util.UUID;
 public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> {
     UserProfile getUserProfileById(UUID id);
     Optional<UserProfile> findByEmail(String email);
+    List<UserProfile> findByTenant_Id(UUID tenantId);
     List<UserProfile> findByCustomerId(UUID customerId);
     List<UserProfile> findByCustomer_IdNot(UUID customerId);
 }
