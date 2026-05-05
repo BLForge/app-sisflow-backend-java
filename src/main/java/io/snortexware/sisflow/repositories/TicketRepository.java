@@ -25,4 +25,20 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     @Query("SELECT t FROM Ticket t WHERE t.assignedTo.id = :userId ORDER BY CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END ASC, t.createdAt ASC")
     List<Ticket> findMyQueue(@Param("userId") UUID userId);
+
+    /** All tickets for a tenant (moderators+). */
+    @Query("SELECT t FROM Ticket t WHERE t.customer.tenant.id = :tenantId")
+    List<Ticket> findByTenantId(@Param("tenantId") UUID tenantId);
+
+    /** Tickets visible to a regular user within a tenant. */
+    @Query("SELECT t FROM Ticket t WHERE t.customer.tenant.id = :tenantId AND (t.createdBy.id = :userId OR t.assignedTo.id = :userId)")
+    List<Ticket> findByTenantIdAndUserId(@Param("tenantId") UUID tenantId, @Param("userId") UUID userId);
+
+    /** Tickets visible to a regular user (no tenant restriction — system admin). */
+    @Query("SELECT t FROM Ticket t WHERE t.createdBy.id = :userId OR t.assignedTo.id = :userId")
+    List<Ticket> findByUserId(@Param("userId") UUID userId);
+
+    /** Single ticket by ID scoped to tenant. */
+    @Query("SELECT t FROM Ticket t WHERE t.id = :id AND t.customer.tenant.id = :tenantId")
+    Optional<Ticket> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }

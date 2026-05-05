@@ -1,153 +1,65 @@
 package io.snortexware.sisflow.security;
 
 import io.snortexware.sisflow.security.exceptions.AccessDeniedException;
-import io.snortexware.sisflow.security.exceptions.InvalidPermissionException;
-import io.snortexware.sisflow.security.exceptions.InvalidRoleException;
 import io.snortexware.sisflow.security.exceptions.UnauthorizedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Global exception handler for authorization and security exceptions.
+ * Returns only { code, status } to the client — never internal messages,
+ * stack traces, SQL errors, paths, or permission names.
+ * Everything is logged server-side for debugging.
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * Handle UnauthorizedException (401 Unauthorized).
-     */
     @ExceptionHandler(UnauthorizedException.class)
-    public ResponseEntity<Map<String, Object>> handleUnauthorizedException(
-            UnauthorizedException ex,
-            WebRequest request) {
-        log.warn("Unauthorized access attempt: {}", ex.getMessage());
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", HttpStatus.UNAUTHORIZED.value());
-        response.put("error", "Unauthorized");
-        response.put("code", ex.getCode());
-        response.put("message", ex.getMessage());
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    public ResponseEntity<Map<String, Object>> handleUnauthorized(UnauthorizedException ex) {
+        log.warn("Unauthorized: {}", ex.getMessage());
+        return error(HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
     }
 
-    /**
-     * Handle AccessDeniedException (403 Forbidden).
-     */
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccessDeniedException(
-            AccessDeniedException ex,
-            WebRequest request) {
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", HttpStatus.FORBIDDEN.value());
-        response.put("error", "Forbidden");
-        response.put("code", ex.getCode());
-        response.put("message", ex.getMessage());
-        if (ex.getRequiredPermission() != null) {
-            response.put("requiredPermission", ex.getRequiredPermission());
-        }
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
+        return error(HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN);
     }
 
-    /**
-     * Handle InvalidRoleException (400 Bad Request).
-     */
-    @ExceptionHandler(InvalidRoleException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidRoleException(
-            InvalidRoleException ex,
-            WebRequest request) {
-        log.warn("Invalid role: {}", ex.getMessage());
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", HttpStatus.BAD_REQUEST.value());
-        response.put("error", "Bad Request");
-        response.put("code", ex.getCode());
-        response.put("message", ex.getMessage());
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
+        // Log field details internally, never expose them
+        log.warn("Validation failed: {}", ex.getBindingResult().getAllErrors());
+        return error(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
     }
 
-    /**
-     * Handle InvalidPermissionException (400 Bad Request).
-     */
-    @ExceptionHandler(InvalidPermissionException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidPermissionException(
-            InvalidPermissionException ex,
-            WebRequest request) {
-        log.warn("Invalid permission: {}", ex.getMessage());
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", HttpStatus.BAD_REQUEST.value());
-        response.put("error", "Bad Request");
-        response.put("code", ex.getCode());
-        response.put("message", ex.getMessage());
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
+        int status = ex.getStatusCode().value();
+        ErrorCode code = ErrorCode.fromReason(ex.getReason(), status);
+        // Log the real reason internally
+        log.warn("ResponseStatusException [{}] {}: {}", status, code, ex.getReason());
+        return error(HttpStatus.valueOf(status), code);
     }
 
-    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationException(
-            org.springframework.web.bind.MethodArgumentNotValidException ex,
-            WebRequest request) {
-        String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(e -> e.getField() + ": " + e.getDefaultMessage())
-                .collect(java.util.stream.Collectors.joining(", "));
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", HttpStatus.BAD_REQUEST.value());
-        response.put("message", message);
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
-    public ResponseEntity<Map<String, Object>> handleResponseStatusException(
-            org.springframework.web.server.ResponseStatusException ex,
-            WebRequest request) {
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", ex.getStatusCode().value());
-        response.put("message", ex.getReason());
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-        return new ResponseEntity<>(response, ex.getStatusCode());
-    }
-
-    /**
-     * Handle generic exceptions (500 Internal Server Error).
-     */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGenericException(
-            Exception ex,
-            WebRequest request) {
-        log.error("Unexpected error: {}", ex.getMessage(), ex);
+    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
+        // Log full stack trace internally, never expose it
+        log.error("Unhandled exception: {}", ex.getMessage(), ex);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR);
+    }
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("timestamp", OffsetDateTime.now());
-        response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        response.put("error", "Internal Server Error");
-        response.put("message", "An unexpected error occurred");
-        response.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    private static ResponseEntity<Map<String, Object>> error(HttpStatus status, ErrorCode code) {
+        return ResponseEntity.status(status).body(Map.of(
+                "status", status.value(),
+                "code", code.name()
+        ));
     }
 }

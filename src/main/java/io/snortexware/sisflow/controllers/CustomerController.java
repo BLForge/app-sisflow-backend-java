@@ -3,7 +3,9 @@ package io.snortexware.sisflow.controllers;
 import io.snortexware.sisflow.dto.CreateCustomerRequest;
 import io.snortexware.sisflow.dto.UpdateCustomerRequest;
 import io.snortexware.sisflow.entities.Customer;
+import io.snortexware.sisflow.entities.Tenant;
 import io.snortexware.sisflow.repositories.CustomerRepository;
+import io.snortexware.sisflow.repositories.TenantRepository;
 import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
@@ -13,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -27,35 +30,32 @@ public class CustomerController {
     private final CustomerRepository customerRepository;
     private final AuthorizationService authorizationService;
     private final TenantContext tenantContext;
+    private final TenantRepository tenantRepository;
 
     public CustomerController(CustomerRepository customerRepository, AuthorizationService authorizationService,
-                               TenantContext tenantContext) {
+                               TenantContext tenantContext, TenantRepository tenantRepository) {
         this.customerRepository = customerRepository;
         this.authorizationService = authorizationService;
         this.tenantContext = tenantContext;
+        this.tenantRepository = tenantRepository;
     }
 
     @PostMapping
     @Transactional
     public ResponseEntity<Customer> create(@Valid @RequestBody CreateCustomerRequest request, @AuthenticationPrincipal UUID callerId) {
-        // SECURITY: Only admins can create customers
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                log.warn("Non-admin user {} attempted to create customer", callerId);
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            log.error("Authorization check failed for user: {}", callerId, e);
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!authorizationService.isModeratorOrAbove(callerId))
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        
+
         if (customerRepository.findByDocument(request.getDocument()).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
+
+        UUID tenantId = tenantContext.getCurrentTenant();
+        Tenant tenant = tenantId != null
+                ? tenantRepository.findById(tenantId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found"))
+                : null;
 
         Customer customer = Customer.builder()
                 .name(request.getName())
@@ -68,6 +68,7 @@ public class CustomerController {
                 .state(request.getState())
                 .logoUrl(request.getLogoUrl())
                 .notes(request.getNotes())
+                .tenant(tenant)
                 .status(Customer.Status.active)
                 .createdAt(OffsetDateTime.now())
                 .build();
@@ -78,7 +79,7 @@ public class CustomerController {
     @GetMapping
     public ResponseEntity<List<Customer>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        if (!authorizationService.isAdminOrAbove(callerId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!authorizationService.isModeratorOrAbove(callerId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
         UUID tenantId = tenantContext.getCurrentTenant();
         List<Customer> customers = tenantId != null
@@ -90,20 +91,9 @@ public class CustomerController {
     @PutMapping("/{id}")
     @Transactional
     public ResponseEntity<Customer> update(@PathVariable UUID id, @Valid @RequestBody UpdateCustomerRequest request, @AuthenticationPrincipal UUID callerId) {
-        // SECURITY: Only admins can update customers
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                log.warn("Non-admin user {} attempted to update customer {}", callerId, id);
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            log.error("Authorization check failed for user: {}", callerId, e);
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (!authorizationService.isModeratorOrAbove(callerId))
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
         
         Optional<Customer> existingCustomer = customerRepository.findById(id);
         if (existingCustomer.isEmpty()) {

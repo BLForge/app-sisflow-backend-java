@@ -319,8 +319,8 @@ public class AuthorizationService {
      */
     public void validateCanManageRoles(UUID userId) {
         if (userId == null) throw new UnauthorizedException("Authentication required");
-        if (!isModeratorOrAbove(userId))
-            throw new UnauthorizedException("Only moderators and above can manage roles");
+        if (!isAdminOrAbove(userId))
+            throw new UnauthorizedException("Only admins can manage roles");
     }
 
     /**
@@ -328,8 +328,8 @@ public class AuthorizationService {
      */
     public void validateCanManagePermissions(UUID userId) {
         if (userId == null) throw new UnauthorizedException("Authentication required");
-        if (!isModeratorOrAbove(userId))
-            throw new UnauthorizedException("Only moderators and above can manage permissions");
+        if (!isAdminOrAbove(userId))
+            throw new UnauthorizedException("Only admins can manage permissions");
     }
 
     /**

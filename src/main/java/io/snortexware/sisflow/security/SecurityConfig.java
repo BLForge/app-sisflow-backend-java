@@ -50,7 +50,7 @@ public class SecurityConfig {
                 }))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/**", "/health", "/tenants/register", "/files/upload", "/swagger-ui/**", "/v3/api-docs/**", "/github/webhook").permitAll()
+                        .requestMatchers("/auth/**", "/health", "/tenants/register", "/swagger-ui/**", "/v3/api-docs/**", "/github/webhook").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(localhostOnlyFilter,

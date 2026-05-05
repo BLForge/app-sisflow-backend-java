@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -65,51 +66,56 @@ public class TicketController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Ticket>> getTickets(@AuthenticationPrincipal UUID callerId){
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    public ResponseEntity<List<Ticket>> getTickets(@AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        UUID tenantId = tenantContext.getCurrentTenant();
+        List<Ticket> tickets;
+
+        if (tenantId != null) {
+            // Tenant-scoped: moderators see all tenant tickets; others see only their own
+            if (authorizationService.isModeratorOrAbove(callerId)) {
+                tickets = ticketRepository.findByTenantId(tenantId);
+            } else {
+                tickets = ticketRepository.findByTenantIdAndUserId(tenantId, callerId);
+            }
+        } else {
+            // system_admin: no tenant restriction, but still scope to user unless admin
+            if (authorizationService.isModeratorOrAbove(callerId)) {
+                tickets = ticketRepository.findAll();
+            } else {
+                tickets = ticketRepository.findByUserId(callerId);
+            }
         }
-        
-        try {
-            // Apply authorization filtering
-            List<Ticket> allTickets = ticketRepository.findAll();
-            
-            // Filter tickets based on user access
-            List<Ticket> filteredTickets = allTickets.stream()
-                .filter(ticket -> canUserAccessTicket(ticket, callerId))
-                .toList();
-                
-            return ResponseEntity.ok(filteredTickets);
-        } catch (Exception e) {
-            // If there's an error, return empty list for security
-            return ResponseEntity.ok(List.of());
-        }
+
+        return ResponseEntity.ok(tickets);
     }
-    
-    private boolean canUserAccessTicket(Ticket ticket, UUID userId) {
-        if (userId == null) {
-            return false;
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Ticket> getTicketById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+        UUID tenantId = tenantContext.getCurrentTenant();
+        Ticket ticket;
+
+        if (tenantId != null) {
+            ticket = ticketRepository.findByIdAndTenantId(id, tenantId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found"));
+        } else {
+            ticket = ticketRepository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found"));
         }
-        
-        try {
-            // Admins and moderators can see all tickets
-            if (authorizationService.isModeratorOrAbove(userId)) {
-                return true;
-            }
-            
-            // User can see tickets they created or are assigned to
-            if (ticket.getCreatedBy() != null && ticket.getCreatedBy().getId().equals(userId)) {
-                return true;
-            }
-            
-            if (ticket.getAssignedTo() != null && ticket.getAssignedTo().getId().equals(userId)) {
-                return true;
-            }
-            
-            return false;
-        } catch (Exception e) {
-            return false;
+
+        // Non-moderators can only view tickets they created or are assigned to
+        if (!authorizationService.isModeratorOrAbove(callerId)) {
+            boolean isOwner = (ticket.getCreatedBy() != null && ticket.getCreatedBy().getId().equals(callerId))
+                    || (ticket.getAssignedTo() != null && ticket.getAssignedTo().getId().equals(callerId));
+            if (!isOwner) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
+
+        return ResponseEntity.ok(ticket);
     }
 
     @GetMapping("/my-queue")

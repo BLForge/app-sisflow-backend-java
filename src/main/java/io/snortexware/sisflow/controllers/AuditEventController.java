@@ -4,6 +4,7 @@ import io.snortexware.sisflow.entities.AuditEvent;
 import io.snortexware.sisflow.entities.Ticket;
 import io.snortexware.sisflow.repositories.AuditEventRepository;
 import io.snortexware.sisflow.repositories.TicketRepository;
+import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.services.AuthorizationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,7 @@ public class AuditEventController {
     private final AuditEventRepository auditEventRepository;
     private final TicketRepository ticketRepository;
     private final AuthorizationService authorizationService;
+    private final TenantContext tenantContext;
 
     @GetMapping
     public ResponseEntity<List<AuditEvent>> list(
@@ -33,14 +35,15 @@ public class AuditEventController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // SECURITY: Verify user has access to this ticket
+        // SECURITY: Verify user has access to this ticket (tenant-scoped)
         Ticket ticket = ticketRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found"));
-        
-        try {
-            authorizationService.validateCanViewTicket(callerId, ticket);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        UUID callerTenant = tenantContext.getCurrentTenant();
+        if (callerTenant != null && (ticket.getCustomer() == null
+                || ticket.getCustomer().getTenant() == null
+                || !ticket.getCustomer().getTenant().getId().equals(callerTenant))) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
 
         return ResponseEntity.ok(auditEventRepository.findByTicketIdOrderByCreatedAtDesc(id));
