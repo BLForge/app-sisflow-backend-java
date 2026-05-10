@@ -53,6 +53,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         } catch (Exception e) {
             logger.warn("Invalid JWT: {}", e.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"status\":401,\"code\":\"AUTH_TOKEN_INVALID\"}");
             return;
         }
 

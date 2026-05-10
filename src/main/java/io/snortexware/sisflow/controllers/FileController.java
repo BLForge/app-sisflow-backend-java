@@ -2,9 +2,9 @@ package io.snortexware.sisflow.controllers;
 
 import io.snortexware.sisflow.entities.StoredFile;
 import io.snortexware.sisflow.repositories.StoredFileRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -33,7 +33,7 @@ public class FileController {
 
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/"))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only image files are allowed");
+            throw AppException.fileTypeNotAllowed();
 
         String ext = contentType.substring(contentType.lastIndexOf('/') + 1);
         String filename = UUID.randomUUID() + "." + ext;
@@ -55,7 +55,7 @@ public class FileController {
             @PathVariable String filename) {
 
         StoredFile f = storedFileRepository.findByBucketAndFilename(bucket, filename)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found"));
+                .orElseThrow(AppException::notFound);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(f.getContentType()))

@@ -1,6 +1,10 @@
 package io.snortexware.sisflow.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.snortexware.sisflow.security.RLSContextInterceptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -15,6 +19,11 @@ public class WebConfig implements WebMvcConfigurer {
 
     public WebConfig(RLSContextInterceptor rlsContextInterceptor) {
         this.rlsContextInterceptor = rlsContextInterceptor;
+    }
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return JsonMapper.builder().build();
     }
 
     @Override

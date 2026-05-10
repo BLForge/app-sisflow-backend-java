@@ -7,11 +7,10 @@ import io.snortexware.sisflow.entities.UserProfile;
 import io.snortexware.sisflow.repositories.TicketRepository;
 import io.snortexware.sisflow.repositories.TimeEntryRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -29,10 +28,10 @@ public class TimeEntryService {
     @Transactional
     public TimeEntry log(UUID ticketId, UUID callerId, LogTimeRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found"));
+                .orElseThrow(AppException::notFound);
 
         UserProfile user = userProfileRepository.findById(callerId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User profile not found"));
+                .orElseThrow(AppException::unauthorized);
 
         TimeEntry entry = TimeEntry.builder()
                 .ticket(ticket)
@@ -52,19 +51,17 @@ public class TimeEntryService {
     @Transactional
     public void delete(UUID ticketId, UUID entryId) {
         TimeEntry entry = timeEntryRepository.findById(entryId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Time entry not found"));
+                .orElseThrow(AppException::notFound);
 
-        if (!entry.getTicket().getId().equals(ticketId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Time entry not found for this ticket");
-        }
+        if (!entry.getTicket().getId().equals(ticketId))
+            throw AppException.notFound();
 
         timeEntryRepository.delete(entry);
     }
 
     public List<TimeEntry> list(UUID ticketId) {
-        if (!ticketRepository.existsById(ticketId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found");
-        }
+        if (!ticketRepository.existsById(ticketId))
+            throw AppException.notFound();
         return timeEntryRepository.findByTicketIdOrderByCreatedAtAsc(ticketId);
     }
 }

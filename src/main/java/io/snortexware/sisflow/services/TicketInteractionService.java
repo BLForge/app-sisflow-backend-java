@@ -7,11 +7,10 @@ import io.snortexware.sisflow.entities.UserProfile;
 import io.snortexware.sisflow.repositories.TicketInteractionRepository;
 import io.snortexware.sisflow.repositories.TicketRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -28,10 +27,10 @@ public class TicketInteractionService {
     @Transactional
     public TicketInteraction post(UUID ticketId, UUID callerId, CreateInteractionRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found"));
+                .orElseThrow(AppException::notFound);
 
         UserProfile user = userProfileRepository.findById(callerId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User profile not found"));
+                .orElseThrow(AppException::unauthorized);
 
         TicketInteraction interaction = TicketInteraction.builder()
                 .ticket(ticket)
@@ -45,9 +44,8 @@ public class TicketInteractionService {
     }
 
     public List<TicketInteraction> list(UUID ticketId, String callerRole) {
-        if (!ticketRepository.existsById(ticketId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket not found");
-        }
+        if (!ticketRepository.existsById(ticketId))
+            throw AppException.notFound();
 
         if ("client".equals(callerRole)) {
             return ticketInteractionRepository.findByTicketIdAndIsInternal(ticketId, false);

@@ -28,13 +28,20 @@ public class RLSContextInterceptor implements HandlerInterceptor {
             if (tenantContext.hasUser()) {
                 UUID userId = tenantContext.getCurrentUser();
                 
-                // Set RLS context variables in PostgreSQL session
-                String userIdSql = "SET app.current_user_id = '" + userId.toString() + "'";
-                String roleSql = "SET app.current_user_role = '" + getUserRoleString(userId) + "'";
-                
+                // Set RLS context variables in PostgreSQL session (parameterized to prevent injection)
+                String role = getUserRoleString(userId);
                 try {
-                    jdbcTemplate.execute(userIdSql);
-                    jdbcTemplate.execute(roleSql);
+                    jdbcTemplate.execute((java.sql.Connection con) -> {
+                        try (var ps = con.prepareStatement("SELECT set_config('app.current_user_id', ?, true)")) {
+                            ps.setString(1, userId.toString());
+                            ps.execute();
+                        }
+                        try (var ps = con.prepareStatement("SELECT set_config('app.current_user_role', ?, true)")) {
+                            ps.setString(1, role);
+                            ps.execute();
+                        }
+                        return null;
+                    });
                     log.debug("RLS context set for user: {}", userId);
                 } catch (Exception e) {
                     log.warn("Failed to set RLS context variables: {}", e.getMessage());

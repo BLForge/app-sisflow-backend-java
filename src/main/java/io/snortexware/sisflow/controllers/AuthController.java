@@ -3,6 +3,7 @@ package io.snortexware.sisflow.controllers;
 import io.snortexware.sisflow.dto.LoginRequest;
 import io.snortexware.sisflow.dto.RegisterRequest;
 import io.snortexware.sisflow.services.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,8 +19,8 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
-        return ResponseEntity.ok(authService.signIn(req.getEmail(), req.getPassword()));
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {
+        return ResponseEntity.ok(authService.signIn(req.getEmail(), req.getPassword(), request));
     }
 
     @PostMapping("/register")

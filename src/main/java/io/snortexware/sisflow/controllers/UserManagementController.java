@@ -9,28 +9,24 @@ import io.snortexware.sisflow.repositories.TenantRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.repositories.UserRoleRepository;
 import io.snortexware.sisflow.security.TenantContext;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthService;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.time.OffsetDateTime;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Slf4j
 @RestController
 @RequestMapping("/admin/users")
 @RequiredArgsConstructor
@@ -47,45 +43,34 @@ public class UserManagementController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<Map<String, Object>> createUser(
-            @Valid @RequestBody CreateUserRequest request,
+    public ResponseEntity<Map<String, Object>> createUser(@Valid @RequestBody CreateUserRequest request,
             @AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
-
-        if (userProfileRepository.findByEmail(request.email()).isPresent())
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "E-mail já cadastrado");
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
+        if (userProfileRepository.findByEmail(request.email()).isPresent()) throw AppException.conflict();
 
         UUID tenantId = tenantContext.getCurrentTenant();
         Tenant tenant = tenantId != null
-                ? tenantRepository.findById(tenantId)
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tenant not found"))
+                ? tenantRepository.findById(tenantId).orElseThrow(AppException::notFound)
                 : null;
 
         UserProfile user = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .email(request.email())
-                .name(request.name())
-                .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString())) // unusable random password
-                .tenant(tenant)
-                .type(UserProfile.UserType.agent)
-                .role(UserProfile.Role.agent)
-                .emailConfirmed(true)
-                .createdAt(OffsetDateTime.now())
-                .build();
+                .id(UUID.randomUUID()).email(request.email()).name(request.name())
+                .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                .tenant(tenant).type(UserProfile.UserType.agent).role(UserProfile.Role.agent)
+                .emailConfirmed(true).createdAt(OffsetDateTime.now()).build();
 
         userProfileRepository.save(user);
-        authService.requestPasswordReset(user.getEmail()); // user sets their own password on first access
+        authService.requestPasswordReset(user.getEmail());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "id", user.getId(),
-                "email", user.getEmail(),
-                "name", user.getName()
-        ));
+                "id", user.getId(), "email", user.getEmail(), "name", user.getName()));
     }
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> listUsers(@AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
 
         UUID tenantId = tenantContext.getCurrentTenant();
         List<UserProfile> users = tenantId != null
@@ -94,17 +79,13 @@ public class UserManagementController {
 
         List<Map<String, Object>> result = users.stream().map(user -> {
             Map<String, Object> m = new HashMap<>();
-            m.put("id", user.getId());
-            m.put("name", user.getName());
-            m.put("email", user.getEmail());
-            m.put("avatarUrl", user.getAvatarUrl());
+            m.put("id", user.getId()); m.put("name", user.getName());
+            m.put("email", user.getEmail()); m.put("avatarUrl", user.getAvatarUrl());
             m.put("createdAt", user.getCreatedAt());
             List<Map<String, Object>> roles = userRoleRepository.findActiveByUserId(user.getId()).stream()
                     .map(ur -> Map.<String, Object>of(
-                            "id", ur.getRole().getId(),
-                            "code", ur.getRole().getCode(),
-                            "name", ur.getRole().getName(),
-                            "hierarchyLevel", ur.getRole().getHierarchyLevel()))
+                            "id", ur.getRole().getId(), "code", ur.getRole().getCode(),
+                            "name", ur.getRole().getName(), "hierarchyLevel", ur.getRole().getHierarchyLevel()))
                     .collect(Collectors.toList());
             m.put("roles", roles);
             m.put("highestRoleLevel", roles.stream().mapToInt(r -> (Integer) r.get("hierarchyLevel")).max().orElse(-1));
@@ -116,31 +97,25 @@ public class UserManagementController {
 
     @GetMapping("/roles")
     public ResponseEntity<List<Role>> getRoles(@AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
-        // Tenant admins can only see roles up to their own level
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
         int callerLevel = authorizationService.getCurrentUserHierarchyLevel(callerId);
-        List<Role> roles = roleRepository.findAll().stream()
-                .filter(r -> r.getHierarchyLevel() <= callerLevel)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(roles);
+        return ResponseEntity.ok(roleRepository.findAll().stream()
+                .filter(r -> r.getHierarchyLevel() <= callerLevel).collect(Collectors.toList()));
     }
 
     @PostMapping("/{userId}/roles/{roleId}")
     @Transactional
     public ResponseEntity<Void> assignRole(@PathVariable UUID userId, @PathVariable UUID roleId,
             @AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
         assertSameTenant(callerId, userId);
 
-        Role role = roleRepository.findById(roleId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Role not found"));
-
-        // Prevent privilege escalation: can't assign a role higher than your own
+        Role role = roleRepository.findById(roleId).orElseThrow(AppException::notFound);
         authorizationService.validateCanAssignRole(callerId, role.getHierarchyLevel());
 
-        UserProfile user = userProfileRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
+        UserProfile user = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
         userRoleRepository.save(UserRole.builder()
                 .user(user).role(role).isActive(true)
                 .assignedAt(OffsetDateTime.now()).assignedBy(callerId)
@@ -153,12 +128,12 @@ public class UserManagementController {
     @Transactional
     public ResponseEntity<Void> removeRole(@PathVariable UUID userId, @PathVariable UUID roleId,
             @AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
         assertSameTenant(callerId, userId);
 
         UserRole userRole = userRoleRepository.findActiveByUserIdAndRoleId(userId, roleId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User role not found"));
-
+                .orElseThrow(AppException::notFound);
         userRole.setIsActive(false);
         userRole.setRevokedAt(OffsetDateTime.now());
         userRole.setRevokedBy(callerId);
@@ -172,12 +147,11 @@ public class UserManagementController {
     public ResponseEntity<Void> updateUser(@PathVariable UUID userId,
             @Valid @RequestBody UpdateUserRequest request,
             @AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
         assertSameTenant(callerId, userId);
 
-        UserProfile user = userProfileRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
+        UserProfile user = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
         if (request.name() != null) user.setName(request.name());
         if (request.avatarUrl() != null) user.setAvatarUrl(request.avatarUrl());
         userProfileRepository.save(user);
@@ -187,47 +161,34 @@ public class UserManagementController {
 
     @DeleteMapping("/{userId}")
     @Transactional
-    public ResponseEntity<Void> deleteUser(@PathVariable UUID userId,
-            @AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
-        if (userId.equals(callerId))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot delete your own account");
+    public ResponseEntity<Void> deleteUser(@PathVariable UUID userId, @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
+        if (userId.equals(callerId)) throw AppException.badRequest();
         assertSameTenant(callerId, userId);
         userProfileRepository.deleteById(userId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{userId}/reset-password")
-    public ResponseEntity<Void> resetPassword(@PathVariable UUID userId,
-            @AuthenticationPrincipal UUID callerId) {
-        requireModerator(callerId);
+    public ResponseEntity<Void> resetPassword(@PathVariable UUID userId, @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
         assertSameTenant(callerId, userId);
-        UserProfile user = userProfileRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        UserProfile user = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
         authService.requestPasswordReset(user.getEmail());
         return ResponseEntity.noContent().build();
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    private void requireModerator(UUID callerId) {
-        if (callerId == null || !authorizationService.isModeratorOrAbove(callerId))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
-    }
-
     private void assertSameTenant(UUID callerId, UUID targetUserId) {
         UUID callerTenant = tenantContext.getCurrentTenant();
-        if (callerTenant == null) return; // system_admin has no tenant restriction
+        if (callerTenant == null) return;
         userProfileRepository.findById(targetUserId).ifPresent(target -> {
             if (target.getTenant() != null && !target.getTenant().getId().equals(callerTenant))
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+                throw AppException.forbidden();
         });
     }
 
     public record UpdateUserRequest(String name, String avatarUrl) {}
-
-    public record CreateUserRequest(
-            @NotBlank @Email String email,
-            @NotBlank String name
-    ) {}
+    public record CreateUserRequest(@NotBlank @Email String email, @NotBlank String name) {}
 }

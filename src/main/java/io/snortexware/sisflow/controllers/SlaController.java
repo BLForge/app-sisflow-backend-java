@@ -5,6 +5,7 @@ import io.snortexware.sisflow.dto.UpdateSlaRequest;
 import io.snortexware.sisflow.entities.Sla;
 import io.snortexware.sisflow.repositories.SlaRepository;
 import io.snortexware.sisflow.services.AuthorizationService;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -51,7 +52,7 @@ public class SlaController extends BaseController {
                                       @AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
         Sla sla = slaRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLA not found"));
+                .orElseThrow(AppException::notFound);
         sla.setName(request.getName());
         sla.setResponseTimeHours(request.getResponseTimeHours());
         sla.setResolutionTimeHours(request.getResolutionTimeHours());

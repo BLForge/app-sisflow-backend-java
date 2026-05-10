@@ -1,7 +1,9 @@
 package io.snortexware.sisflow.security;
 
 import io.snortexware.sisflow.security.exceptions.AccessDeniedException;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.security.exceptions.UnauthorizedException;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -20,6 +23,12 @@ import java.util.Map;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AppException.class)
+    public ResponseEntity<Map<String, Object>> handleApp(AppException ex) {
+        log.warn("AppException [{}]: {}", ex.getStatus().value(), ex.getCode());
+        return error(ex.getStatus(), ex.getCode());
+    }
 
     @ExceptionHandler(UnauthorizedException.class)
     public ResponseEntity<Map<String, Object>> handleUnauthorized(UnauthorizedException ex) {
@@ -61,5 +70,12 @@ public class GlobalExceptionHandler {
                 "status", status.value(),
                 "code", code.name()
         ));
+    }
+
+    /** For use in servlet filters where ResponseEntity is not available. */
+    public static void writeError(HttpServletResponse response, HttpStatus status, ErrorCode code) throws IOException {
+        response.setStatus(status.value());
+        response.setContentType("application/json");
+        response.getWriter().write("{\"status\":" + status.value() + ",\"code\":\"" + code.name() + "\"}");
     }
 }

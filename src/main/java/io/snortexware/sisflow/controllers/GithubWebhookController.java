@@ -1,5 +1,6 @@
 package io.snortexware.sisflow.controllers;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.snortexware.sisflow.dto.github.GithubWebhookDTO;
 import io.snortexware.sisflow.entities.GithubConfiguration;
 import io.snortexware.sisflow.entities.Project;
@@ -33,13 +34,16 @@ public class GithubWebhookController {
     private final ProjectRepository projectRepository;
     private final GithubConfigurationRepository githubConfigurationRepository;
     private final TicketRepository ticketRepository;
+    private final ObjectMapper objectMapper;
 
     public GithubWebhookController(ProjectRepository projectRepository,
-                                  GithubConfigurationRepository githubConfigurationRepository,
-                                  TicketRepository ticketRepository) {
+                                   GithubConfigurationRepository githubConfigurationRepository,
+                                   TicketRepository ticketRepository,
+                                   ObjectMapper objectMapper) {
         this.projectRepository = projectRepository;
         this.githubConfigurationRepository = githubConfigurationRepository;
         this.ticketRepository = ticketRepository;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping("/webhook")
@@ -69,12 +73,20 @@ public class GithubWebhookController {
                 return ResponseEntity.badRequest().build();
             }
 
+            // Verify signature before any DB lookups
+            // We need the secret, but we don't know the project yet — so we require the signature
+            // header to be present and validate it after resolving the config.
+            // Step 1: reject immediately if no signature header at all
+            if (signature == null) {
+                logger.warn("Webhook received without X-Hub-Signature-256 header");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
             String owner = parts[0];
             String repo = parts[1];
 
             Optional<Project> projectOpt = projectRepository.findByGithubOwnerAndGithubRepository(owner, repo);
             if (projectOpt.isEmpty()) {
-                // Return 200 to avoid confirming which repos are configured
                 return ResponseEntity.ok().build();
             }
 
@@ -87,13 +99,15 @@ public class GithubWebhookController {
 
             GithubConfiguration config = configOpt.get();
 
-            if (config.getWebhookSecret() != null && !config.getWebhookSecret().isEmpty()) {
-                if (signature == null || !verifySignature(payload, config.getWebhookSecret(), signature)) {
-                    logger.warn("Invalid webhook signature for project: {}", project.getId());
-                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-                }
-            } else {
-                logger.warn("No webhook secret configured for project: {}", project.getId());
+            // Reject if no secret is configured — unsigned webhooks are not accepted
+            if (config.getWebhookSecret() == null || config.getWebhookSecret().isEmpty()) {
+                logger.warn("Webhook rejected: no secret configured for project {}", project.getId());
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            if (!verifySignature(payload, config.getWebhookSecret(), signature)) {
+                logger.warn("Invalid webhook signature for project: {}", project.getId());
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
 
             String title = webhookData.getPull_request().getTitle();
@@ -129,9 +143,7 @@ public class GithubWebhookController {
 
     private GithubWebhookDTO parseWebhookPayload(String payload) {
         try {
-            // Simple JSON parsing - in production use proper JSON library
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            return mapper.readValue(payload, GithubWebhookDTO.class);
+            return objectMapper.readValue(payload, GithubWebhookDTO.class);
         } catch (Exception e) {
             logger.error("Failed to parse webhook payload", e);
             return null;
@@ -146,7 +158,6 @@ public class GithubWebhookController {
             byte[] hash = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder();
             for (byte b : hash) hex.append(String.format("%02x", b));
-            // Constant-time comparison to prevent timing attacks
             return java.security.MessageDigest.isEqual(
                     hex.toString().getBytes(StandardCharsets.UTF_8),
                     signature.substring(7).getBytes(StandardCharsets.UTF_8));

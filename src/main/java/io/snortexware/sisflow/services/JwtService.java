@@ -24,12 +24,16 @@ public class JwtService {
     }
 
     public String generateToken(UUID userId) {
-        return Jwts.builder()
+        return generateToken(userId, null);
+    }
+
+    public String generateToken(UUID userId, UUID tenantId) {
+        var builder = Jwts.builder()
                 .subject(userId.toString())
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(key)
-                .compact();
+                .expiration(new Date(System.currentTimeMillis() + expirationMs));
+        if (tenantId != null) builder.claim("tenantId", tenantId.toString());
+        return builder.signWith(key).compact();
     }
 
     public void validateToken(String token) {
@@ -45,7 +49,8 @@ public class JwtService {
     }
 
     public UUID getTenantIdFromToken(String token) {
-        return null;
+        String tenantId = parseClaims(token).get("tenantId", String.class);
+        return tenantId != null ? UUID.fromString(tenantId) : null;
     }
 
     private Claims parseClaims(String token) {

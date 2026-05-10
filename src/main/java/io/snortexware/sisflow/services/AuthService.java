@@ -8,13 +8,13 @@ import io.snortexware.sisflow.repositories.EmailConfirmationTokenRepository;
 import io.snortexware.sisflow.repositories.PasswordResetTokenRepository;
 import io.snortexware.sisflow.repositories.RefreshTokenRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -24,154 +24,144 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final UserProfileRepository userProfileRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
-    private final EmailConfirmationTokenRepository emailConfirmationTokenRepository;
-    private final PasswordResetTokenRepository passwordResetTokenRepository;
-    private final JwtService jwtService;
-    private final BCryptPasswordEncoder passwordEncoder;
-    private final EmailService emailService;
+	private final UserProfileRepository userProfileRepository;
+	private final RefreshTokenRepository refreshTokenRepository;
+	private final EmailConfirmationTokenRepository emailConfirmationTokenRepository;
+	private final PasswordResetTokenRepository passwordResetTokenRepository;
+	private final JwtService jwtService;
+	private final BCryptPasswordEncoder passwordEncoder;
+	private final EmailService emailService;
+	private final TenantResolver tenantResolver;
 
-    @Value("${jwt.refresh-expiration-days:30}")
-    private long refreshExpirationDays;
+	@Value("${jwt.refresh-expiration-days:1}")
+	private long refreshExpirationDays;
 
-    @Value("${email.confirmation.expiration-hours:24}")
-    private long confirmationExpirationHours;
+	@Value("${email.confirmation.expiration-hours:24}")
+	private long confirmationExpirationHours;
 
-    @Transactional
-    public Map<String, Object> signIn(String email, String password) {
-        UserProfile user = userProfileRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credenciais inválidas"));
+	@Transactional
+	public Map<String, Object> signIn(String email, String password, HttpServletRequest request) {
+		UserProfile user = userProfileRepository.findByEmailWithTenant(email).orElseThrow(AppException::notFound);
 
-        if (user.getPasswordHash() == null || !passwordEncoder.matches(password, user.getPasswordHash()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credenciais inválidas");
+		var tenant = tenantResolver.resolveFromRequest(request);
+		if (tenant.isPresent()) {
+			if (user.getTenant() == null || !user.getTenant().getId().equals(tenant.get().getId()))
+				throw AppException.notFound();
+		} else {
+			if (user.getTenant() != null || !userProfileRepository.hasSystemAdminRole(user.getId()))
+				throw AppException.notFound();
+		}
 
-        if (!user.isEmailConfirmed())
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "E-mail não confirmado. Verifique sua caixa de entrada.");
+		if (user.getPasswordHash() == null || !passwordEncoder.matches(password, user.getPasswordHash()))
+			throw AppException.badRequest();
 
-        return buildTokenResponse(user.getId());
-    }
+		if (!user.isEmailConfirmed())
+			throw AppException.forbidden();
 
-    @Transactional
-    public Map<String, Object> signUp(String email, String password, String fullName) {
-        if (userProfileRepository.findByEmail(email).isPresent())
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "E-mail já cadastrado");
+		UUID tenantId = user.getTenant() != null ? user.getTenant().getId() : null;
+		return buildTokenResponse(user.getId(), tenantId);
+	}
 
-        UserProfile user = UserProfile.builder()
-                .id(UUID.randomUUID())
-                .email(email)
-                .passwordHash(passwordEncoder.encode(password))
-                .name(fullName)
-                .role(UserProfile.Role.client)
-                .emailConfirmed(false)
-                .createdAt(OffsetDateTime.now())
-                .build();
+	@Transactional
+	public Map<String, Object> signUp(String email, String password, String fullName) {
+		if (userProfileRepository.findByEmail(email).isPresent())
+			throw AppException.conflict();
 
-        userProfileRepository.save(user);
-        emailService.sendConfirmationEmail(email, issueConfirmationToken(user.getId()));
-        return Map.of("status", "pending_confirmation");
-    }
+		UserProfile user = UserProfile.builder().id(UUID.randomUUID()).email(email)
+				.passwordHash(passwordEncoder.encode(password)).name(fullName).role(UserProfile.Role.client)
+				.emailConfirmed(false).createdAt(OffsetDateTime.now()).build();
 
-    @Transactional
-    public Map<String, Object> confirmEmail(String token) {
-        EmailConfirmationToken ct = emailConfirmationTokenRepository.findByToken(token)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token inválido ou expirado"));
+		userProfileRepository.save(user);
+		emailService.sendConfirmationEmail(email, issueConfirmationToken(user.getId()));
+		return Map.of("status", "pending_confirmation");
+	}
 
-        if (ct.isUsed() || ct.getExpiresAt().isBefore(OffsetDateTime.now()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token inválido ou expirado");
+	@Transactional
+	public Map<String, Object> confirmEmail(String token) {
+		EmailConfirmationToken ct = emailConfirmationTokenRepository.findByToken(token)
+				.orElseThrow(AppException::badRequest);
 
-        UserProfile user = userProfileRepository.findById(ct.getUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuário não encontrado"));
+		if (ct.isUsed() || ct.getExpiresAt().isBefore(OffsetDateTime.now()))
+			throw AppException.badRequest();
 
-        user.setEmailConfirmed(true);
-        userProfileRepository.save(user);
-        ct.setUsed(true);
-        emailConfirmationTokenRepository.save(ct);
+		UserProfile user = userProfileRepository.findById(ct.getUserId()).orElseThrow(AppException::notFound);
 
-        return buildTokenResponse(user.getId());
-    }
+		user.setEmailConfirmed(true);
+		userProfileRepository.save(user);
+		ct.setUsed(true);
+		emailConfirmationTokenRepository.save(ct);
 
-    @Transactional
-    public void resendConfirmation(String email) {
-        UserProfile user = userProfileRepository.findByEmail(email)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuário não encontrado"));
+		UUID tenantId = user.getTenant() != null ? user.getTenant().getId() : null;
+		return buildTokenResponse(user.getId(), tenantId);
+	}
 
-        if (user.isEmailConfirmed())
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "E-mail já confirmado");
+	@Transactional
+	public void resendConfirmation(String email) {
+		UserProfile user = userProfileRepository.findByEmail(email).orElseThrow(AppException::notFound);
 
-        emailConfirmationTokenRepository.deleteByUserId(user.getId());
-        emailService.sendConfirmationEmail(email, issueConfirmationToken(user.getId()));
-    }
+		if (user.isEmailConfirmed())
+			throw AppException.badRequest();
 
-    @Transactional
-    public void requestPasswordReset(String email) {
-        userProfileRepository.findByEmail(email).ifPresent(user -> {
-            passwordResetTokenRepository.deleteByUserId(user.getId());
-            String token = UUID.randomUUID().toString();
-            passwordResetTokenRepository.save(PasswordResetToken.builder()
-                    .userId(user.getId())
-                    .token(token)
-                    .expiresAt(OffsetDateTime.now().plusHours(1))
-                    .used(false)
-                    .createdAt(OffsetDateTime.now())
-                    .build());
-            emailService.sendPasswordResetEmail(email, token);
-        });
-        // Always return silently to avoid user enumeration
-    }
+		emailConfirmationTokenRepository.deleteByUserId(user.getId());
+		emailService.sendConfirmationEmail(email, issueConfirmationToken(user.getId()));
+	}
 
-    @Transactional
-    public void resetPassword(String token, String newPassword) {
-        PasswordResetToken prt = passwordResetTokenRepository.findByToken(token)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token inválido ou expirado"));
+	@Transactional
+	public void requestPasswordReset(String email) {
+		userProfileRepository.findByEmail(email).ifPresent(user -> {
+			passwordResetTokenRepository.deleteByUserId(user.getId());
+			String token = UUID.randomUUID().toString();
+			passwordResetTokenRepository.save(PasswordResetToken.builder().userId(user.getId()).token(token)
+					.expiresAt(OffsetDateTime.now().plusHours(1)).used(false).createdAt(OffsetDateTime.now()).build());
+			emailService.sendPasswordResetEmail(email, token);
+		});
+	}
 
-        if (prt.isUsed() || prt.getExpiresAt().isBefore(OffsetDateTime.now()))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Token inválido ou expirado");
+	@Transactional
+	public void resetPassword(String token, String newPassword) {
+		PasswordResetToken prt = passwordResetTokenRepository.findByToken(token).orElseThrow(AppException::badRequest);
 
-        UserProfile user = userProfileRepository.findById(prt.getUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Usuário não encontrado"));
+		if (prt.isUsed() || prt.getExpiresAt().isBefore(OffsetDateTime.now()))
+			throw AppException.badRequest();
 
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
-        userProfileRepository.save(user);
-        prt.setUsed(true);
-        passwordResetTokenRepository.save(prt);
-    }
+		UserProfile user = userProfileRepository.findById(prt.getUserId()).orElseThrow(AppException::notFound);
 
-    @Transactional
-    public Map<String, Object> refresh(String rawRefreshToken) {
-        RefreshToken stored = refreshTokenRepository.findByToken(rawRefreshToken)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token inválido"));
+		user.setPasswordHash(passwordEncoder.encode(newPassword));
+		userProfileRepository.save(user);
+		prt.setUsed(true);
+		passwordResetTokenRepository.save(prt);
+	}
 
-        if (stored.getExpiresAt().isBefore(OffsetDateTime.now())) {
-            refreshTokenRepository.delete(stored);
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token expirado");
-        }
+	@Transactional
+	public Map<String, Object> refresh(String rawRefreshToken) {
+		RefreshToken stored = refreshTokenRepository.findByToken(rawRefreshToken)
+				.orElseThrow(AppException::unauthorized);
 
-        refreshTokenRepository.delete(stored);
-        return buildTokenResponse(stored.getUserId());
-    }
+		if (stored.getExpiresAt().isBefore(OffsetDateTime.now())) {
+			refreshTokenRepository.delete(stored);
+			throw AppException.unauthorized();
+		}
 
-    private String issueConfirmationToken(UUID userId) {
-        String token = UUID.randomUUID().toString();
-        emailConfirmationTokenRepository.save(EmailConfirmationToken.builder()
-                .userId(userId)
-                .token(token)
-                .expiresAt(OffsetDateTime.now().plusHours(confirmationExpirationHours))
-                .used(false)
-                .createdAt(OffsetDateTime.now())
-                .build());
-        return token;
-    }
+		refreshTokenRepository.delete(stored);
+		UUID tenantId = userProfileRepository.findByIdWithTenant(stored.getUserId())
+				.map(u -> u.getTenant() != null ? u.getTenant().getId() : null).orElse(null);
+		return buildTokenResponse(stored.getUserId(), tenantId);
+	}
 
-    private Map<String, Object> buildTokenResponse(UUID userId) {
-        String accessToken = jwtService.generateToken(userId);
-        String refreshToken = UUID.randomUUID().toString();
-        refreshTokenRepository.save(RefreshToken.builder()
-                .userId(userId)
-                .token(refreshToken)
-                .expiresAt(OffsetDateTime.now().plusDays(refreshExpirationDays))
-                .createdAt(OffsetDateTime.now())
-                .build());
-        return Map.of("accessToken", accessToken, "refreshToken", refreshToken, "expiresIn", 3600);
-    }
+	private String issueConfirmationToken(UUID userId) {
+		String token = UUID.randomUUID().toString();
+		emailConfirmationTokenRepository.save(EmailConfirmationToken.builder().userId(userId).token(token)
+				.expiresAt(OffsetDateTime.now().plusHours(confirmationExpirationHours)).used(false)
+				.createdAt(OffsetDateTime.now()).build());
+		return token;
+	}
+
+	private Map<String, Object> buildTokenResponse(UUID userId, UUID tenantId) {
+		String accessToken = jwtService.generateToken(userId, tenantId);
+		String refreshToken = UUID.randomUUID().toString();
+		refreshTokenRepository.save(RefreshToken.builder().userId(userId).token(refreshToken)
+				.expiresAt(OffsetDateTime.now().plusDays(refreshExpirationDays)).createdAt(OffsetDateTime.now())
+				.build());
+		return Map.of("accessToken", accessToken, "refreshToken", refreshToken, "expiresIn", 3600);
+	}
 }
