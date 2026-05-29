@@ -12,6 +12,8 @@ import io.snortexware.sisflow.repositories.TicketRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,7 @@ public class KnowledgeBaseService {
     private final TicketRepository ticketRepository;
     private final CategoryRepository categoryRepository;
 
+    @Cacheable(value = "knowledgeBase", key = "@cacheKeyService.tenantKey('list', #query == null ? '' : #query)")
     public List<KnowledgeBase> list(String query) {
         if (query == null || query.isBlank()) {
             return knowledgeBaseRepository.findByIsPublishedTrue();
@@ -38,6 +41,7 @@ public class KnowledgeBaseService {
     }
 
     @Transactional
+    @CacheEvict(value = {"knowledgeBase", "ticketKnowledgeBase"}, allEntries = true)
     public KnowledgeBase create(UUID callerId, CreateKnowledgeBaseRequest request) {
         UserProfile author = userProfileRepository.findById(callerId)
                 .orElseThrow(AppException::unauthorized);
@@ -62,6 +66,7 @@ public class KnowledgeBaseService {
     }
 
     @Transactional
+    @CacheEvict(value = {"knowledgeBase", "ticketKnowledgeBase"}, allEntries = true)
     public KnowledgeBase update(UUID id, UpdateKnowledgeBaseRequest request) {
         KnowledgeBase article = knowledgeBaseRepository.findById(id)
                 .orElseThrow(AppException::notFound);
@@ -82,6 +87,7 @@ public class KnowledgeBaseService {
     }
 
     @Transactional
+    @CacheEvict(value = {"knowledgeBase", "ticketKnowledgeBase"}, allEntries = true)
     public void delete(UUID id) {
         if (!knowledgeBaseRepository.existsById(id))
             throw AppException.notFound();
@@ -89,6 +95,7 @@ public class KnowledgeBaseService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketKnowledgeBase", allEntries = true)
     public void linkToTicket(UUID ticketId, UUID articleId) {
         Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
         KnowledgeBase article = knowledgeBaseRepository.findById(articleId).orElseThrow(AppException::notFound);
@@ -97,6 +104,7 @@ public class KnowledgeBaseService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketKnowledgeBase", allEntries = true)
     public void unlinkFromTicket(UUID ticketId, UUID articleId) {
         Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
         KnowledgeBase article = knowledgeBaseRepository.findById(articleId).orElseThrow(AppException::notFound);
@@ -104,6 +112,7 @@ public class KnowledgeBaseService {
         ticketRepository.save(ticket);
     }
 
+    @Cacheable(value = "ticketKnowledgeBase", key = "@cacheKeyService.tenantKey(#ticketId)")
     public List<KnowledgeBase> listForTicket(UUID ticketId) {
         Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
 

@@ -9,6 +9,8 @@ import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,6 +31,7 @@ public class CustomerAccessController {
     private final AuthorizationService authorizationService;
 
     @GetMapping
+    @Cacheable(value = "customerAccesses", key = "@cacheKeyService.tenantKey(#customerId)")
     public ResponseEntity<List<CustomerAccess>> list(@PathVariable UUID customerId, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
@@ -37,6 +40,7 @@ public class CustomerAccessController {
 
     @PostMapping
     @Transactional
+    @CacheEvict(value = "customerAccesses", allEntries = true)
     public ResponseEntity<CustomerAccess> create(@PathVariable UUID customerId,
             @Valid @RequestBody CreateCustomerAccessRequest request,
             @AuthenticationPrincipal UUID callerId) {
@@ -56,6 +60,7 @@ public class CustomerAccessController {
 
     @DeleteMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "customerAccesses", allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID customerId, @PathVariable UUID id,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();

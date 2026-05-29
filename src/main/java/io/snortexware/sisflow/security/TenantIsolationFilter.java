@@ -30,7 +30,7 @@ public class TenantIsolationFilter implements Filter {
 
     private static final String[] PUBLIC_PATHS = {
             "/auth/", "/health", "/swagger-ui/",
-            "/v3/api-docs/", "/github/webhook", "/error", "/tenants/register"
+            "/v3/api-docs/", "/github/webhook", "/error", "/tenants/register", "/tenants/branding"
     };
 
     public TenantIsolationFilter(JwtService jwtService, TenantContext tenantContext,
@@ -62,7 +62,6 @@ public class TenantIsolationFilter implements Filter {
                 return;
             }
 
-            // Fix #1: invalid/expired JWT → 401 instead of silent pass-through
             String token = auth.substring(7);
             UUID userId;
             try {
@@ -82,14 +81,12 @@ public class TenantIsolationFilter implements Filter {
                     tenantId = user.getTenant().getId();
             }
 
-            // Fix #2: authenticated user with no resolvable tenant → 401
             if (tenantId == null) {
                 log.warn("Authenticated user {} has no tenant", userId);
                 GlobalExceptionHandler.writeError(res, HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
                 return;
             }
 
-            // Fix #3/#5: when behind trusted proxy, use raw Host header and hard-reject unknown subdomains
             if (trustHostHeader) {
                 UUID hostTenantId = resolveTenantFromHost(req);
                 if (hostTenantId == null || !hostTenantId.equals(tenantId)) {
@@ -110,7 +107,6 @@ public class TenantIsolationFilter implements Filter {
         return tenantResolver.resolveFromRequest(req).map(t -> t.getId()).orElse(null);
     }
 
-    // Fix #4: exact segment match to avoid /auth-admin/ bypassing /auth/ check
     private boolean isPublicPath(String path) {
         for (String p : PUBLIC_PATHS) if (path.startsWith(p)) return true;
         return false;

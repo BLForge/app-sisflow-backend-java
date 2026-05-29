@@ -44,7 +44,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        // Log field details internally, never expose them
         log.warn("Validation failed: {}", ex.getBindingResult().getAllErrors());
         return error(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
     }
@@ -53,14 +52,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
         int status = ex.getStatusCode().value();
         ErrorCode code = ErrorCode.fromReason(ex.getReason(), status);
-        // Log the real reason internally
         log.warn("ResponseStatusException [{}] {}: {}", status, code, ex.getReason());
         return error(HttpStatus.valueOf(status), code);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        // Log full stack trace internally, never expose it
         log.error("Unhandled exception: {}", ex.getMessage(), ex);
         return error(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR);
     }

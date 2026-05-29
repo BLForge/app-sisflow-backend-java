@@ -8,6 +8,8 @@ import io.snortexware.sisflow.repositories.AgentGroupRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ public class AgentGroupService {
     private final UserProfileRepository userProfileRepository;
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup create(CreateAgentGroupRequest request) {
         AgentGroup group = AgentGroup.builder()
                 .name(request.getName())
@@ -33,6 +36,7 @@ public class AgentGroupService {
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup update(UUID id, UpdateAgentGroupRequest request) {
         AgentGroup group = agentGroupRepository.findById(id)
                 .orElseThrow(AppException::notFound);
@@ -42,12 +46,14 @@ public class AgentGroupService {
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public void delete(UUID id) {
         if (!agentGroupRepository.existsById(id)) throw AppException.notFound();
         agentGroupRepository.deleteById(id);
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup addMember(UUID groupId, UUID userId) {
         AgentGroup group = agentGroupRepository.findById(groupId).orElseThrow(AppException::notFound);
         UserProfile user = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
@@ -56,12 +62,14 @@ public class AgentGroupService {
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup removeMember(UUID groupId, UUID userId) {
         AgentGroup group = agentGroupRepository.findById(groupId).orElseThrow(AppException::notFound);
         group.getMembers().removeIf(m -> m.getId().equals(userId));
         return agentGroupRepository.save(group);
     }
 
+    @Cacheable(value = "agentGroups", key = "@cacheKeyService.tenantKey('all')")
     public List<AgentGroup> list() {
         return agentGroupRepository.findAll();
     }

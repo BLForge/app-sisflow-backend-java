@@ -24,11 +24,8 @@ public class RLSContextInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         try {
-            // Check if tenant context is set (meaning user is authenticated)
             if (tenantContext.hasUser()) {
                 UUID userId = tenantContext.getCurrentUser();
-                
-                // Set RLS context variables in PostgreSQL session (parameterized to prevent injection)
                 String role = getUserRoleString(userId);
                 try {
                     jdbcTemplate.execute((java.sql.Connection con) -> {
@@ -45,20 +42,15 @@ public class RLSContextInterceptor implements HandlerInterceptor {
                     log.debug("RLS context set for user: {}", userId);
                 } catch (Exception e) {
                     log.warn("Failed to set RLS context variables: {}", e.getMessage());
-                    // Continue anyway - RLS will use default behavior
                 }
             }
         } catch (Exception e) {
             log.debug("Error setting RLS context: {}", e.getMessage());
-            // Continue without RLS context
         }
 
         return true;
     }
 
-    /**
-     * Get the user's highest role code for RLS context.
-     */
     private String getUserRoleString(UUID userId) {
         try {
             Integer level = jdbcTemplate.queryForObject(
@@ -80,6 +72,5 @@ public class RLSContextInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, 
                                Object handler, Exception ex) {
-        // Context is cleared by TenantIsolationFilter, but we can add additional cleanup here if needed
     }
 }

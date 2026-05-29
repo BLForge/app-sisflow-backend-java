@@ -60,7 +60,7 @@ public class AuthorizationService {
         if (userId == null) {
             return false;
         }
-        return getCurrentUserHierarchyLevel(userId) >= 4;
+        return getCurrentUserHierarchyLevel(userId) >= 3;
     }
 
     /**
@@ -196,7 +196,6 @@ public class AuthorizationService {
             throw new UnauthorizedException("Authentication required");
         }
         
-        // User can update if they created it or are assigned to it
         if (ticket.getCreatedBy().getId().equals(userId) || 
             (ticket.getAssignedTo() != null && ticket.getAssignedTo().getId().equals(userId))) {
             if (!hasPermission(userId, "ticket:update")) {
@@ -206,7 +205,6 @@ public class AuthorizationService {
             return;
         }
 
-        // Moderators and above can update any ticket
         if (isModeratorOrAbove(userId)) {
             if (!hasPermission(userId, "ticket:update")) {
                 log.warn("User {} (moderator) attempted to update ticket without permission", userId);
@@ -245,13 +243,11 @@ public class AuthorizationService {
             throw new UnauthorizedException("Authentication required");
         }
         
-        // User can view if they created it or are assigned to it
         if (ticket.getCreatedBy().getId().equals(userId) || 
             (ticket.getAssignedTo() != null && ticket.getAssignedTo().getId().equals(userId))) {
             return;
         }
 
-        // Moderators and above can view any ticket
         if (isModeratorOrAbove(userId)) {
             return;
         }

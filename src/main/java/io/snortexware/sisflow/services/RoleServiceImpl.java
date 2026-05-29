@@ -52,16 +52,14 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
-    @CacheEvict(value = "roles", allEntries = true)
+    @CacheEvict(value = {"roles", "userRoles", "userPermissions"}, allEntries = true)
     public Role createRole(CreateRoleRequest request) {
         log.info("Creating new role: {}", request.getCode());
 
-        // Validate role code is unique
         if (roleRepository.findByCode(request.getCode()).isPresent()) {
             throw new InvalidRoleException("Role with code '" + request.getCode() + "' already exists");
         }
 
-        // Validate hierarchy level
         if (request.getHierarchyLevel() == null || request.getHierarchyLevel() < 0 || request.getHierarchyLevel() > 4) {
             throw new InvalidRoleException("Invalid hierarchy level. Must be between 0 and 4");
         }
@@ -83,19 +81,17 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
-    @CacheEvict(value = "roles", allEntries = true)
+    @CacheEvict(value = {"roles", "userRoles", "userPermissions"}, allEntries = true)
     public Role updateRole(UUID roleId, UpdateRoleRequest request) {
         log.info("Updating role: {}", roleId);
 
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new InvalidRoleException("Role not found: " + roleId));
 
-        // Prevent modification of system roles
         if (role.getIsSystem()) {
             throw new AccessDeniedException("Cannot modify system roles");
         }
 
-        // Hierarchy level cannot be changed
         if (request.getHierarchyLevel() != null && !request.getHierarchyLevel().equals(role.getHierarchyLevel())) {
             throw new InvalidRoleException("Hierarchy level cannot be changed after role creation");
         }
@@ -114,19 +110,17 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
-    @CacheEvict(value = "roles", allEntries = true)
+    @CacheEvict(value = {"roles", "userRoles", "userPermissions"}, allEntries = true)
     public void deleteRole(UUID roleId) {
         log.info("Deleting role: {}", roleId);
 
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new InvalidRoleException("Role not found: " + roleId));
 
-        // Prevent deletion of system roles
         if (role.getIsSystem()) {
             throw new AccessDeniedException("Cannot delete system roles");
         }
 
-        // Check if role has active users
         List<UserRole> activeUserRoles = userRoleRepository.findActiveByRoleId(roleId);
         if (!activeUserRoles.isEmpty()) {
             throw new AccessDeniedException(
@@ -139,26 +133,27 @@ public class RoleServiceImpl implements RoleService {
     }
 
     @Override
-    @Cacheable(value = "roles", key = "#roleId")
+    @Cacheable(value = "roles", key = "@cacheKeyService.tenantKey(#roleId)")
     public Role getRoleById(UUID roleId) {
         return roleRepository.findById(roleId)
                 .orElseThrow(() -> new InvalidRoleException("Role not found: " + roleId));
     }
 
     @Override
-    @Cacheable(value = "roles", key = "'all'")
+    @Cacheable(value = "roles", key = "@cacheKeyService.tenantKey('all')")
     public List<Role> getAllRoles() {
         return roleRepository.findByIsActiveTrue();
     }
 
     @Override
+    @Cacheable(value = "roles", key = "@cacheKeyService.tenantKey('code', #code)")
     public Role getRoleByCode(String code) {
         return roleRepository.findByCode(code)
                 .orElseThrow(() -> new InvalidRoleException("Role not found: " + code));
     }
 
     @Override
-    @CacheEvict(value = {"roles", "userPermissions"}, allEntries = true)
+    @CacheEvict(value = {"roles", "userRoles", "userPermissions"}, allEntries = true)
     public void assignRoleToUser(UUID userId, UUID roleId) {
         log.info("Assigning role {} to user {}", roleId, userId);
 
@@ -167,12 +162,10 @@ public class RoleServiceImpl implements RoleService {
 
         Role role = getRoleById(roleId);
 
-        // Check if user already has this role
         if (userRoleRepository.findByUserIdAndRoleId(userId, roleId).isPresent()) {
             throw new InvalidRoleException("User already has this role");
         }
 
-        // Validate hierarchy: user cannot have two roles of the same level
         List<UserRole> userRoles = userRoleRepository.findActiveByUserId(userId);
         for (UserRole userRole : userRoles) {
             if (userRole.getRole().getHierarchyLevel().equals(role.getHierarchyLevel())) {
@@ -195,12 +188,11 @@ public class RoleServiceImpl implements RoleService {
         userRoleRepository.save(userRole);
         log.info("Role assigned successfully: user={}, role={}", userId, roleId);
 
-        // Audit log
         auditService.logRoleAssignment(userId, roleId, currentUserId);
     }
 
     @Override
-    @CacheEvict(value = {"roles", "userPermissions"}, allEntries = true)
+    @CacheEvict(value = {"roles", "userRoles", "userPermissions"}, allEntries = true)
     public void removeRoleFromUser(UUID userId, UUID roleId) {
         log.info("Removing role {} from user {}", roleId, userId);
 
@@ -215,12 +207,11 @@ public class RoleServiceImpl implements RoleService {
         userRoleRepository.save(userRole);
         log.info("Role removed successfully: user={}, role={}", userId, roleId);
 
-        // Audit log
         auditService.logRoleRevocation(userId, roleId, currentUserId);
     }
 
     @Override
-    @Cacheable(value = "userRoles", key = "#userId")
+    @Cacheable(value = "userRoles", key = "@cacheKeyService.tenantKey(#userId)")
     public List<Role> getUserRoles(UUID userId) {
         List<UserRole> userRoles = userRoleRepository.findActiveByUserId(userId);
         return userRoles.stream()
@@ -241,7 +232,6 @@ public class RoleServiceImpl implements RoleService {
 
             Role targetRole = getRoleById(targetRoleId);
 
-            // Get assigner's highest role level
             List<UserRole> assignerRoles = userRoleRepository.findActiveByUserId(assignerId);
             if (assignerRoles.isEmpty()) {
                 return false;
@@ -252,7 +242,6 @@ public class RoleServiceImpl implements RoleService {
                     .max(Integer::compareTo)
                     .orElse(-1);
 
-            // Assigner can only assign roles of lower or equal level
             return assignerMaxLevel >= targetRole.getHierarchyLevel();
         } catch (Exception e) {
             log.warn("Error checking if user can assign role: {}", e.getMessage());
@@ -265,14 +254,12 @@ public class RoleServiceImpl implements RoleService {
         try {
             Role role = getRoleById(roleId);
 
-            // System roles can only be modified by system admins
             if (role.getIsSystem()) {
                 List<UserRole> userRoles = userRoleRepository.findActiveByUserId(userId);
                 return userRoles.stream()
                         .anyMatch(ur -> ur.getRole().getHierarchyLevel() >= 4);
             }
 
-            // Non-system roles can be modified by users with higher hierarchy level
             return canAssignRole(userId, roleId);
         } catch (Exception e) {
             log.warn("Error checking if user can modify role: {}", e.getMessage());
@@ -306,7 +293,6 @@ public class RoleServiceImpl implements RoleService {
 
         for (UUID userId : userIds) {
             try {
-                // Skip if user already has this role
                 if (userRoleRepository.findByUserIdAndRoleId(userId, roleId).isPresent()) {
                     log.debug("User {} already has role {}, skipping", userId, roleId);
                     continue;

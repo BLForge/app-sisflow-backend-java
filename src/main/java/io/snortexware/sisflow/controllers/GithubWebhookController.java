@@ -73,10 +73,6 @@ public class GithubWebhookController {
                 return ResponseEntity.badRequest().build();
             }
 
-            // Verify signature before any DB lookups
-            // We need the secret, but we don't know the project yet — so we require the signature
-            // header to be present and validate it after resolving the config.
-            // Step 1: reject immediately if no signature header at all
             if (signature == null) {
                 logger.warn("Webhook received without X-Hub-Signature-256 header");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -99,7 +95,6 @@ public class GithubWebhookController {
 
             GithubConfiguration config = configOpt.get();
 
-            // Reject if no secret is configured — unsigned webhooks are not accepted
             if (config.getWebhookSecret() == null || config.getWebhookSecret().isEmpty()) {
                 logger.warn("Webhook rejected: no secret configured for project {}", project.getId());
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();

@@ -60,7 +60,6 @@ public class TenantService {
 
         userProfileRepository.saveAndFlush(admin);
 
-        // Assign tenant_admin role (not system_admin)
         roleRepository.findByCode("tenant_admin").ifPresent(role ->
                 userRoleRepository.save(UserRole.builder()
                         .user(admin).role(role).isActive(true).assignedAt(OffsetDateTime.now()).build()));

@@ -16,6 +16,7 @@ import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ public class TicketService {
     private final TicketStatusConfigRepository statusRepository;
     private final AuditService auditService;
     private final TicketInteractionService ticketInteractionService;
+    private final JdbcTemplate jdbcTemplate;
 
     @Transactional
     public Ticket createTicket(CreateTicketRequest req, UUID callerId) {
@@ -47,7 +49,6 @@ public class TicketService {
         Sla sla = slaRepository.findById(req.getSlaId())
                 .orElseThrow(AppException::notFound);
 
-        // Find default "open" status or create one
         TicketStatusConfig defaultStatus = statusRepository.findAll().stream()
                 .filter(s -> "open".equalsIgnoreCase(s.getName()) || "aberto".equalsIgnoreCase(s.getName()))
                 .findFirst()
@@ -61,7 +62,7 @@ public class TicketService {
                 });
 
         Ticket ticket = Ticket.builder()
-                .code(ticketRepository.findMaxCode() + 1)
+                .code(generateTicketCode())
                 .title(req.getTitle())
                 .description(req.getDescription())
                 .status(defaultStatus)
@@ -96,14 +97,12 @@ public class TicketService {
         TicketStatusConfig status = statusRepository.findById(req.getStatusId())
                 .orElseThrow(AppException::notFound);
 
-        // Capture old values before mutation
         TicketStatusConfig oldStatus = ticket.getStatus();
         Ticket.Priority oldPriority = ticket.getPriority();
         Ticket.TicketType oldType = ticket.getType();
         UUID oldSlaId = ticket.getSla() != null ? ticket.getSla().getId() : null;
         UUID oldAssignedToId = ticket.getAssignedTo() != null ? ticket.getAssignedTo().getId() : null;
 
-        // Validate custom code if provided
         if (req.getCode() != null && !req.getCode().equals(ticket.getCode())) {
             if (ticketRepository.existsByCodeAndIdNot(req.getCode(), ticketId))
                 throw AppException.conflict();
@@ -121,7 +120,6 @@ public class TicketService {
 
         Ticket saved = ticketRepository.save(ticket);
 
-        // Record audit events for changed fields
         if (oldStatus != null && !oldStatus.getId().equals(req.getStatusId())) {
             auditService.record(ticketId, callerId, AuditService.STATUS_CHANGED,
                     oldStatus.getName(), status.getName());
@@ -177,5 +175,9 @@ public class TicketService {
         }
 
         return saved;
+    }
+
+    private Long generateTicketCode() {
+        return jdbcTemplate.queryForObject("SELECT nextval('ticket_code_seq')", Long.class);
     }
 }

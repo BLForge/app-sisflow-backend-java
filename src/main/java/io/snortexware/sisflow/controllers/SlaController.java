@@ -8,6 +8,8 @@ import io.snortexware.sisflow.services.AuthorizationService;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,12 +31,14 @@ public class SlaController extends BaseController {
     protected AuthorizationService authorizationService() { return authorizationService; }
 
     @GetMapping
+    @Cacheable(value = "slas", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<Sla>> list(@AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
         return ResponseEntity.ok(slaRepository.findAll());
     }
 
     @PostMapping
+    @CacheEvict(value = "slas", allEntries = true)
     public ResponseEntity<Sla> create(@Valid @RequestBody CreateSlaRequest request,
                                       @AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
@@ -47,6 +51,7 @@ public class SlaController extends BaseController {
     }
 
     @PutMapping("/{id}")
+    @CacheEvict(value = "slas", allEntries = true)
     public ResponseEntity<Sla> update(@PathVariable UUID id,
                                       @Valid @RequestBody UpdateSlaRequest request,
                                       @AuthenticationPrincipal UUID callerId) {

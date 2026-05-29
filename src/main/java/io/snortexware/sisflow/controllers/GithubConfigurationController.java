@@ -10,6 +10,8 @@ import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,6 +32,7 @@ public class GithubConfigurationController {
 
     @PostMapping
     @Transactional
+    @CacheEvict(value = "githubConfigurations", allEntries = true)
     public ResponseEntity<GithubConfiguration> create(@Valid @RequestBody CreateGithubConfigurationRequest request,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -47,6 +50,7 @@ public class GithubConfigurationController {
     }
 
     @GetMapping
+    @Cacheable(value = "githubConfigurations", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<GithubConfiguration>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         authorizationService.validateCanManageProjects(callerId);
@@ -54,6 +58,7 @@ public class GithubConfigurationController {
     }
 
     @GetMapping("/{id}")
+    @Cacheable(value = "githubConfigurations", key = "@cacheKeyService.tenantKey('id', #id)")
     public ResponseEntity<GithubConfiguration> getById(@PathVariable UUID id,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -62,6 +67,7 @@ public class GithubConfigurationController {
     }
 
     @GetMapping("/project/{projectId}")
+    @Cacheable(value = "githubConfigurations", key = "@cacheKeyService.tenantKey('project', #projectId)")
     public ResponseEntity<GithubConfiguration> getByProject(@PathVariable UUID projectId,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -72,6 +78,7 @@ public class GithubConfigurationController {
 
     @PutMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "githubConfigurations", allEntries = true)
     public ResponseEntity<GithubConfiguration> update(@PathVariable UUID id,
             @Valid @RequestBody UpdateGithubConfigurationRequest request,
             @AuthenticationPrincipal UUID callerId) {
@@ -87,6 +94,7 @@ public class GithubConfigurationController {
 
     @DeleteMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "githubConfigurations", allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         authorizationService.validateCanManageProjects(callerId);

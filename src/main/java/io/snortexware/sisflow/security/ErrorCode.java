@@ -7,30 +7,26 @@ package io.snortexware.sisflow.security;
  */
 public enum ErrorCode {
 
-    // Auth
     AUTH_INVALID_CREDENTIALS,
     AUTH_EMAIL_NOT_CONFIRMED,
     AUTH_TOKEN_INVALID,
     AUTH_TOKEN_EXPIRED,
     AUTH_TENANT_MISMATCH,
 
-    // Access control
     FORBIDDEN,
     UNAUTHORIZED,
+    RATE_LIMIT_EXCEEDED,
 
-    // Resource
     NOT_FOUND,
     CONFLICT,
+    DUPLICATE_REQUEST,
 
-    // Input
     VALIDATION_ERROR,
     BAD_REQUEST,
 
-    // File
     FILE_TYPE_NOT_ALLOWED,
     FILE_TOO_LARGE,
 
-    // Generic — never expose internals
     INTERNAL_ERROR;
 
     /**

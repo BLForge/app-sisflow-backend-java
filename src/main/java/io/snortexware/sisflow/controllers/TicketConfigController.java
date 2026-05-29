@@ -26,8 +26,6 @@ public class TicketConfigController extends BaseController {
     @Override
     protected AuthorizationService authorizationService() { return authorizationService; }
 
-    // ── Statuses ─────────────────────────────────────────────────────────────
-
     @GetMapping("/ticket-statuses")
     public ResponseEntity<List<TicketStatusConfig>> listStatuses(@AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
@@ -56,8 +54,6 @@ public class TicketConfigController extends BaseController {
         return ResponseEntity.noContent().build();
     }
 
-    // ── Priorities ────────────────────────────────────────────────────────────
-
     @GetMapping("/ticket-priorities")
     public ResponseEntity<List<TicketPriorityConfig>> listPriorities(@AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
@@ -85,8 +81,6 @@ public class TicketConfigController extends BaseController {
         service.deletePriority(id);
         return ResponseEntity.noContent().build();
     }
-
-    // ── Types ─────────────────────────────────────────────────────────────────
 
     @GetMapping("/ticket-types")
     public ResponseEntity<List<TicketTypeConfig>> listTypes(@AuthenticationPrincipal UUID callerId) {

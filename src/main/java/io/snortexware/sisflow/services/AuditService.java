@@ -28,8 +28,6 @@ public class AuditService {
     public static final String TRANSFERRED         = "TRANSFERRED";
     public static final String TIME_LOGGED         = "TIME_LOGGED";
     public static final String SLA_CHANGED         = "SLA_CHANGED";
-    
-    // Role and Permission audit events
     public static final String ROLE_ASSIGNED       = "ROLE_ASSIGNED";
     public static final String ROLE_REVOKED        = "ROLE_REVOKED";
     public static final String PERMISSION_GRANTED  = "PERMISSION_GRANTED";
@@ -69,37 +67,25 @@ public class AuditService {
         }
     }
 
-    /**
-     * Log role assignment to user.
-     */
     public void logRoleAssignment(UUID userId, UUID roleId, UUID actorId) {
         try {
             log.info("Logging role assignment: user={}, role={}, actor={}", userId, roleId, actorId);
-            // This can be extended to store in a dedicated audit table if needed
         } catch (Exception e) {
             log.warn("Failed to log role assignment: {}", e.getMessage());
         }
     }
 
-    /**
-     * Log role revocation from user.
-     */
     public void logRoleRevocation(UUID userId, UUID roleId, UUID actorId) {
         try {
             log.info("Logging role revocation: user={}, role={}, actor={}", userId, roleId, actorId);
-            // This can be extended to store in a dedicated audit table if needed
         } catch (Exception e) {
             log.warn("Failed to log role revocation: {}", e.getMessage());
         }
     }
 
-    /**
-     * Log permission change (grant or revoke).
-     */
     public void logPermissionChange(UUID roleId, UUID permissionId, String action) {
         try {
             log.info("Logging permission change: role={}, permission={}, action={}", roleId, permissionId, action);
-            // This can be extended to store in a dedicated audit table if needed
         } catch (Exception e) {
             log.warn("Failed to log permission change: {}", e.getMessage());
         }

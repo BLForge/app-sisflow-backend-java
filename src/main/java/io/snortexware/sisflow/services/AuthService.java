@@ -32,6 +32,7 @@ public class AuthService {
 	private final BCryptPasswordEncoder passwordEncoder;
 	private final EmailService emailService;
 	private final TenantResolver tenantResolver;
+	private final LoginAttemptService loginAttemptService;
 
 	@Value("${jwt.refresh-expiration-days:1}")
 	private long refreshExpirationDays;
@@ -41,31 +42,47 @@ public class AuthService {
 
 	@Transactional
 	public Map<String, Object> signIn(String email, String password, HttpServletRequest request) {
-		UserProfile user = userProfileRepository.findByEmailWithTenant(email).orElseThrow(AppException::notFound);
+		String ipAddress = getClientIp(request);
+		loginAttemptService.validateLoginAttempt(email, ipAddress);
+
+		UserProfile user = userProfileRepository.findByEmailWithTenant(email).orElseThrow(() -> {
+			loginAttemptService.recordLoginAttempt(email, ipAddress, false);
+			return AppException.notFound();
+		});
 
 		var tenant = tenantResolver.resolveFromRequest(request);
 		if (tenant.isPresent()) {
-			if (user.getTenant() == null || !user.getTenant().getId().equals(tenant.get().getId()))
+			if (user.getTenant() == null || !user.getTenant().getId().equals(tenant.get().getId())) {
+				loginAttemptService.recordLoginAttempt(email, ipAddress, false);
 				throw AppException.notFound();
+			}
 		} else {
-			if (user.getTenant() != null || !userProfileRepository.hasSystemAdminRole(user.getId()))
+			if (user.getTenant() != null || !userProfileRepository.hasSystemAdminRole(user.getId())) {
+				loginAttemptService.recordLoginAttempt(email, ipAddress, false);
 				throw AppException.notFound();
+			}
 		}
 
-		if (user.getPasswordHash() == null || !passwordEncoder.matches(password, user.getPasswordHash()))
+		if (user.getPasswordHash() == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
+			loginAttemptService.recordLoginAttempt(email, ipAddress, false);
 			throw AppException.badRequest();
+		}
 
-		if (!user.isEmailConfirmed())
+		if (!user.isEmailConfirmed()) {
+			loginAttemptService.recordLoginAttempt(email, ipAddress, false);
 			throw AppException.forbidden();
+		}
 
+		loginAttemptService.recordLoginAttempt(email, ipAddress, true);
 		UUID tenantId = user.getTenant() != null ? user.getTenant().getId() : null;
 		return buildTokenResponse(user.getId(), tenantId);
 	}
 
 	@Transactional
 	public Map<String, Object> signUp(String email, String password, String fullName) {
-		if (userProfileRepository.findByEmail(email).isPresent())
-			throw AppException.conflict();
+		if (userProfileRepository.findByEmail(email).isPresent()) {
+			return Map.of("status", "pending_confirmation");
+		}
 
 		UserProfile user = UserProfile.builder().id(UUID.randomUUID()).email(email)
 				.passwordHash(passwordEncoder.encode(password)).name(fullName).role(UserProfile.Role.client)
@@ -97,13 +114,12 @@ public class AuthService {
 
 	@Transactional
 	public void resendConfirmation(String email) {
-		UserProfile user = userProfileRepository.findByEmail(email).orElseThrow(AppException::notFound);
-
-		if (user.isEmailConfirmed())
-			throw AppException.badRequest();
-
-		emailConfirmationTokenRepository.deleteByUserId(user.getId());
-		emailService.sendConfirmationEmail(email, issueConfirmationToken(user.getId()));
+		userProfileRepository.findByEmail(email).ifPresent(user -> {
+			if (!user.isEmailConfirmed()) {
+				emailConfirmationTokenRepository.deleteByUserId(user.getId());
+				emailService.sendConfirmationEmail(email, issueConfirmationToken(user.getId()));
+			}
+		});
 	}
 
 	@Transactional
@@ -163,5 +179,13 @@ public class AuthService {
 				.expiresAt(OffsetDateTime.now().plusDays(refreshExpirationDays)).createdAt(OffsetDateTime.now())
 				.build());
 		return Map.of("accessToken", accessToken, "refreshToken", refreshToken, "expiresIn", 3600);
+	}
+
+	private String getClientIp(HttpServletRequest request) {
+		String xForwardedFor = request.getHeader("X-Forwarded-For");
+		if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+			return xForwardedFor.split(",")[0].trim();
+		}
+		return request.getRemoteAddr();
 	}
 }

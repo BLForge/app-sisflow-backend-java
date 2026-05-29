@@ -12,6 +12,8 @@ import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -33,6 +35,7 @@ public class ProjectController {
 
     @PostMapping
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public ResponseEntity<Project> create(@Valid @RequestBody CreateProjectRequest request,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -55,6 +58,7 @@ public class ProjectController {
     }
 
     @GetMapping
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<Project>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
@@ -62,6 +66,7 @@ public class ProjectController {
     }
 
     @GetMapping("/{id}")
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('id', #id)")
     public ResponseEntity<Project> getById(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
@@ -69,6 +74,7 @@ public class ProjectController {
     }
 
     @GetMapping("/system/{systemId}")
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('system', #systemId)")
     public ResponseEntity<List<Project>> listBySystem(@PathVariable UUID systemId,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -78,6 +84,7 @@ public class ProjectController {
 
     @PutMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public ResponseEntity<Project> update(@PathVariable UUID id,
             @Valid @RequestBody UpdateProjectRequest request,
             @AuthenticationPrincipal UUID callerId) {
@@ -100,6 +107,7 @@ public class ProjectController {
 
     @DeleteMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();

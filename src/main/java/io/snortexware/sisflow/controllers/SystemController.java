@@ -10,6 +10,8 @@ import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,6 +32,7 @@ public class SystemController {
 
     @PostMapping
     @Transactional
+    @CacheEvict(value = "systems", allEntries = true)
     public ResponseEntity<System> create(@Valid @RequestBody CreateSystemRequest request,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -46,6 +49,7 @@ public class SystemController {
     }
 
     @GetMapping
+    @Cacheable(value = "systems", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<System>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
@@ -53,6 +57,7 @@ public class SystemController {
     }
 
     @GetMapping("/{id}")
+    @Cacheable(value = "systems", key = "@cacheKeyService.tenantKey('id', #id)")
     public ResponseEntity<System> getById(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
@@ -60,6 +65,7 @@ public class SystemController {
     }
 
     @GetMapping("/customer/{customerId}")
+    @Cacheable(value = "systems", key = "@cacheKeyService.tenantKey('customer', #customerId)")
     public ResponseEntity<List<System>> listByCustomer(@PathVariable UUID customerId,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
@@ -69,6 +75,7 @@ public class SystemController {
 
     @PutMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "systems", allEntries = true)
     public ResponseEntity<System> update(@PathVariable UUID id,
             @Valid @RequestBody UpdateSystemRequest request,
             @AuthenticationPrincipal UUID callerId) {
@@ -85,6 +92,7 @@ public class SystemController {
 
     @DeleteMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "systems", allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
