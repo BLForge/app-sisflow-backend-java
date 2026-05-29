@@ -14,6 +14,7 @@ import io.snortexware.sisflow.repositories.SlaRepository;
 import io.snortexware.sisflow.repositories.TicketRepository;
 import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
+import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -36,6 +37,8 @@ public class TicketService {
     private final AuditService auditService;
     private final TicketInteractionService ticketInteractionService;
     private final JdbcTemplate jdbcTemplate;
+    private final AuthorizationService authorizationService;
+    private final TenantContext tenantContext;
 
     @Transactional
     public Ticket createTicket(CreateTicketRequest req, UUID callerId) {
@@ -81,6 +84,49 @@ public class TicketService {
 
     public List<Ticket> getMyQueue(UUID callerId) {
         return ticketRepository.findMyQueue(callerId);
+    }
+
+    public boolean isCodeAvailable(Long code, UUID excludeId) {
+        UUID tenantId = tenantContext.getCurrentTenant();
+        boolean taken;
+        if (tenantId != null) {
+            taken = excludeId != null
+                    ? ticketRepository.existsByCodeAndIdNotAndCustomer_Tenant_Id(code, excludeId, tenantId)
+                    : ticketRepository.existsByCodeAndCustomer_Tenant_Id(code, tenantId);
+        } else {
+            taken = excludeId != null
+                    ? ticketRepository.existsByCodeAndIdNot(code, excludeId)
+                    : ticketRepository.existsByCode(code);
+        }
+        return !taken;
+    }
+
+    public List<Ticket> getTickets(UUID callerId) {
+        UUID tenantId = tenantContext.getCurrentTenant();
+        if (tenantId != null) {
+            return authorizationService.isModeratorOrAbove(callerId)
+                    ? ticketRepository.findByTenantId(tenantId)
+                    : ticketRepository.findByTenantIdAndUserId(tenantId, callerId);
+        }
+
+        return authorizationService.isModeratorOrAbove(callerId)
+                ? ticketRepository.findAll()
+                : ticketRepository.findByUserId(callerId);
+    }
+
+    public Ticket getTicketById(UUID id, UUID callerId) {
+        UUID tenantId = tenantContext.getCurrentTenant();
+        Ticket ticket = tenantId != null
+                ? ticketRepository.findByIdAndTenantId(id, tenantId).orElseThrow(AppException::notFound)
+                : ticketRepository.findById(id).orElseThrow(AppException::notFound);
+
+        if (!authorizationService.isModeratorOrAbove(callerId)) {
+            boolean isOwner = (ticket.getCreatedBy() != null && ticket.getCreatedBy().getId().equals(callerId))
+                    || (ticket.getAssignedTo() != null && ticket.getAssignedTo().getId().equals(callerId));
+            if (!isOwner) throw AppException.forbidden();
+        }
+
+        return ticket;
     }
 
     @Transactional

@@ -24,6 +24,7 @@ public class TimeEntryService {
     private final TicketRepository ticketRepository;
     private final UserProfileRepository userProfileRepository;
     private final AuditService auditService;
+    private final AuthorizationService authorizationService;
 
     @Transactional
     public TimeEntry log(UUID ticketId, UUID callerId, LogTimeRequest request) {
@@ -63,5 +64,25 @@ public class TimeEntryService {
         if (!ticketRepository.existsById(ticketId))
             throw AppException.notFound();
         return timeEntryRepository.findByTicketIdOrderByCreatedAtAsc(ticketId);
+    }
+
+    public List<TimeEntry> listForCaller(UUID ticketId, UUID callerId) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
+        authorizationService.validateCanViewTicket(callerId, ticket);
+        return list(ticketId);
+    }
+
+    @Transactional
+    public TimeEntry logForCaller(UUID ticketId, UUID callerId, LogTimeRequest request) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
+        authorizationService.validateCanViewTicket(callerId, ticket);
+        return log(ticketId, callerId, request);
+    }
+
+    @Transactional
+    public void deleteForCaller(UUID ticketId, UUID entryId, UUID callerId) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
+        authorizationService.validateCanViewTicket(callerId, ticket);
+        delete(ticketId, entryId);
     }
 }

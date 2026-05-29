@@ -2,12 +2,10 @@ package io.snortexware.sisflow.controllers;
 
 import io.snortexware.sisflow.dto.CreateSystemRequest;
 import io.snortexware.sisflow.dto.UpdateSystemRequest;
-import io.snortexware.sisflow.entities.Customer;
 import io.snortexware.sisflow.entities.System;
-import io.snortexware.sisflow.repositories.CustomerRepository;
-import io.snortexware.sisflow.repositories.SystemRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
+import io.snortexware.sisflow.services.SystemService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -26,8 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SystemController {
 
-    private final SystemRepository systemRepository;
-    private final CustomerRepository customerRepository;
+    private final SystemService systemService;
     private final AuthorizationService authorizationService;
 
     @PostMapping
@@ -37,15 +34,7 @@ public class SystemController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-
-        Customer customer = customerRepository.findById(request.getCustomerId()).orElseThrow(AppException::badRequest);
-
-        System system = System.builder()
-                .name(request.getName()).description(request.getDescription())
-                .customer(customer).version(request.getVersion())
-                .url(request.getUrl()).status(System.Status.active).build();
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(systemRepository.save(system));
+        return ResponseEntity.status(HttpStatus.CREATED).body(systemService.create(request));
     }
 
     @GetMapping
@@ -53,7 +42,7 @@ public class SystemController {
     public ResponseEntity<List<System>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(systemRepository.findAll());
+        return ResponseEntity.ok(systemService.list());
     }
 
     @GetMapping("/{id}")
@@ -61,7 +50,7 @@ public class SystemController {
     public ResponseEntity<System> getById(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(systemRepository.findById(id).orElseThrow(AppException::notFound));
+        return ResponseEntity.ok(systemService.getById(id));
     }
 
     @GetMapping("/customer/{customerId}")
@@ -70,7 +59,7 @@ public class SystemController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(systemRepository.findByCustomerId(customerId));
+        return ResponseEntity.ok(systemService.listByCustomer(customerId));
     }
 
     @PutMapping("/{id}")
@@ -81,13 +70,7 @@ public class SystemController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-
-        System system = systemRepository.findById(id).orElseThrow(AppException::notFound);
-        system.setName(request.getName()); system.setDescription(request.getDescription());
-        system.setVersion(request.getVersion()); system.setUrl(request.getUrl());
-        if (request.getStatus() != null) system.setStatus(request.getStatus());
-
-        return ResponseEntity.ok(systemRepository.save(system));
+        return ResponseEntity.ok(systemService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
@@ -96,8 +79,7 @@ public class SystemController {
     public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        if (!systemRepository.existsById(id)) throw AppException.notFound();
-        systemRepository.deleteById(id);
+        systemService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

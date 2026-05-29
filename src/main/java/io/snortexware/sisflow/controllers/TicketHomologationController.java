@@ -2,14 +2,10 @@ package io.snortexware.sisflow.controllers;
 
 import io.snortexware.sisflow.dto.AssignHomologatorRequest;
 import io.snortexware.sisflow.dto.HomologationDecisionRequest;
-import io.snortexware.sisflow.entities.Ticket;
 import io.snortexware.sisflow.entities.TicketHomologation;
-import io.snortexware.sisflow.entities.UserProfile;
-import io.snortexware.sisflow.repositories.TicketHomologationRepository;
-import io.snortexware.sisflow.repositories.TicketRepository;
-import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
+import io.snortexware.sisflow.services.TicketHomologationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,7 +14,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,18 +22,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TicketHomologationController {
 
-    private final TicketHomologationRepository homologationRepository;
-    private final TicketRepository ticketRepository;
-    private final UserProfileRepository userProfileRepository;
+    private final TicketHomologationService ticketHomologationService;
     private final AuthorizationService authorizationService;
 
     @GetMapping
     public ResponseEntity<List<TicketHomologation>> list(@PathVariable UUID ticketId,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
-        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
-        authorizationService.validateCanViewTicket(callerId, ticket);
-        return ResponseEntity.ok(homologationRepository.findByTicketIdOrderByCreatedAtAsc(ticketId));
+        return ResponseEntity.ok(ticketHomologationService.list(ticketId, callerId));
     }
 
     @PostMapping
@@ -48,20 +39,7 @@ public class TicketHomologationController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
-
-        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
-        authorizationService.validateCanViewTicket(callerId, ticket);
-
-        UserProfile user = userProfileRepository.findById(request.getUserId()).orElseThrow(AppException::notFound);
-        if (homologationRepository.existsByTicketIdAndUserId(ticketId, request.getUserId()))
-            throw AppException.conflict();
-
-        TicketHomologation h = TicketHomologation.builder()
-                .ticket(ticket).user(user)
-                .status(TicketHomologation.HomologationStatus.pending)
-                .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build();
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(homologationRepository.save(h));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ticketHomologationService.assign(ticketId, callerId, request));
     }
 
     @PutMapping("/{id}/decision")
@@ -70,20 +48,7 @@ public class TicketHomologationController {
             @Valid @RequestBody HomologationDecisionRequest request,
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
-
-        TicketHomologation h = homologationRepository.findById(id).orElseThrow(AppException::notFound);
-        if (!h.getTicket().getId().equals(ticketId)) throw AppException.notFound();
-
-        authorizationService.validateCanViewTicket(callerId, h.getTicket());
-
-        if (!h.getUser().getId().equals(callerId) && !authorizationService.isModeratorOrAbove(callerId))
-            throw AppException.forbidden();
-
-        h.setStatus(request.getStatus());
-        h.setComment(request.getComment());
-        h.setUpdatedAt(OffsetDateTime.now());
-
-        return ResponseEntity.ok(homologationRepository.save(h));
+        return ResponseEntity.ok(ticketHomologationService.decide(ticketId, id, callerId, request));
     }
 
     @DeleteMapping("/{id}")
@@ -92,12 +57,7 @@ public class TicketHomologationController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
-
-        TicketHomologation h = homologationRepository.findById(id).orElseThrow(AppException::notFound);
-        if (!h.getTicket().getId().equals(ticketId)) throw AppException.notFound();
-
-        authorizationService.validateCanViewTicket(callerId, h.getTicket());
-        homologationRepository.delete(h);
+        ticketHomologationService.remove(ticketId, id, callerId);
         return ResponseEntity.noContent().build();
     }
 }

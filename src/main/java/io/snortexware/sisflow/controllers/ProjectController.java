@@ -3,13 +3,9 @@ package io.snortexware.sisflow.controllers;
 import io.snortexware.sisflow.dto.CreateProjectRequest;
 import io.snortexware.sisflow.dto.UpdateProjectRequest;
 import io.snortexware.sisflow.entities.Project;
-import io.snortexware.sisflow.entities.System;
-import io.snortexware.sisflow.entities.TicketStatusConfig;
-import io.snortexware.sisflow.repositories.ProjectRepository;
-import io.snortexware.sisflow.repositories.SystemRepository;
-import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
+import io.snortexware.sisflow.services.ProjectService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -28,9 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProjectController {
 
-    private final ProjectRepository projectRepository;
-    private final SystemRepository systemRepository;
-    private final TicketStatusConfigRepository ticketStatusConfigRepository;
+    private final ProjectService projectService;
     private final AuthorizationService authorizationService;
 
     @PostMapping
@@ -40,21 +34,7 @@ public class ProjectController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-
-        System system = systemRepository.findById(request.getSystemId()).orElseThrow(AppException::badRequest);
-
-        TicketStatusConfig pullRequestStatus = null;
-        if (request.getPullRequestStatusId() != null)
-            pullRequestStatus = ticketStatusConfigRepository.findById(request.getPullRequestStatusId())
-                    .orElseThrow(AppException::badRequest);
-
-        Project project = Project.builder()
-                .name(request.getName()).description(request.getDescription())
-                .system(system).githubRepository(request.getGithubRepository())
-                .githubOwner(request.getGithubOwner()).pullRequestStatus(pullRequestStatus)
-                .status(Project.Status.active).build();
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(projectRepository.save(project));
+        return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(request));
     }
 
     @GetMapping
@@ -62,7 +42,7 @@ public class ProjectController {
     public ResponseEntity<List<Project>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(projectRepository.findAll());
+        return ResponseEntity.ok(projectService.list());
     }
 
     @GetMapping("/{id}")
@@ -70,7 +50,7 @@ public class ProjectController {
     public ResponseEntity<Project> getById(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(projectRepository.findById(id).orElseThrow(AppException::notFound));
+        return ResponseEntity.ok(projectService.getById(id));
     }
 
     @GetMapping("/system/{systemId}")
@@ -79,7 +59,7 @@ public class ProjectController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(projectRepository.findBySystemId(systemId));
+        return ResponseEntity.ok(projectService.listBySystem(systemId));
     }
 
     @PutMapping("/{id}")
@@ -90,19 +70,7 @@ public class ProjectController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-
-        Project project = projectRepository.findById(id).orElseThrow(AppException::notFound);
-
-        if (request.getPullRequestStatusId() != null)
-            project.setPullRequestStatus(ticketStatusConfigRepository
-                    .findById(request.getPullRequestStatusId()).orElseThrow(AppException::badRequest));
-
-        project.setName(request.getName()); project.setDescription(request.getDescription());
-        project.setGithubRepository(request.getGithubRepository());
-        project.setGithubOwner(request.getGithubOwner());
-        if (request.getStatus() != null) project.setStatus(request.getStatus());
-
-        return ResponseEntity.ok(projectRepository.save(project));
+        return ResponseEntity.ok(projectService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
@@ -111,8 +79,7 @@ public class ProjectController {
     public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
-        if (!projectRepository.existsById(id)) throw AppException.notFound();
-        projectRepository.deleteById(id);
+        projectService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

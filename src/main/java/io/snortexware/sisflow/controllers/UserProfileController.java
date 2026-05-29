@@ -3,10 +3,6 @@ package io.snortexware.sisflow.controllers;
 import io.snortexware.sisflow.dto.UpdateProfileRequest;
 import io.snortexware.sisflow.entities.Role;
 import io.snortexware.sisflow.entities.UserProfile;
-import io.snortexware.sisflow.entities.UserRole;
-import io.snortexware.sisflow.repositories.UserProfileRepository;
-import io.snortexware.sisflow.repositories.UserRoleRepository;
-import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
 import io.snortexware.sisflow.services.UserProfileService;
@@ -18,7 +14,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,37 +22,30 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserProfileController {
 
-    private final UserProfileRepository userProfileRepository;
-    private final UserRoleRepository userRoleRepository;
     private final UserProfileService userProfileService;
     private final AuthorizationService authorizationService;
-    private final TenantContext tenantContext;
 
     @PostMapping("/sync")
     @Transactional
     public ResponseEntity<UserProfile> sync(@AuthenticationPrincipal UUID callerId,
             @RequestBody(required = false) SyncRequest request) {
         if (callerId == null) throw AppException.unauthorized();
-        return ResponseEntity.ok(userProfileRepository.findById(callerId).orElseGet(() -> {
-            UserProfile profile = UserProfile.builder()
-                    .id(callerId).name(request != null ? request.name() : null)
-                    .avatarUrl(request != null ? request.avatarUrl() : null)
-                    .role(UserProfile.Role.agent).createdAt(OffsetDateTime.now()).build();
-            return userProfileRepository.save(profile);
-        }));
+        return ResponseEntity.ok(userProfileService.sync(
+                callerId,
+                request != null ? request.name() : null,
+                request != null ? request.avatarUrl() : null));
     }
 
     @GetMapping("/me")
     public ResponseEntity<UserProfile> me(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
-        return ResponseEntity.ok(userProfileRepository.findById(callerId).orElseThrow(AppException::notFound));
+        return ResponseEntity.ok(userProfileService.getMe(callerId));
     }
 
     @GetMapping("/me/roles")
     public ResponseEntity<List<Role>> getMyRoles(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
-        return ResponseEntity.ok(userRoleRepository.findActiveByUserId(callerId).stream()
-                .map(UserRole::getRole).toList());
+        return ResponseEntity.ok(userProfileService.getMyRoles(callerId));
     }
 
     @GetMapping("/customer/{customerId}")
@@ -65,7 +53,7 @@ public class UserProfileController {
             @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
-        return ResponseEntity.ok(userProfileRepository.findByCustomerId(customerId));
+        return ResponseEntity.ok(userProfileService.listCustomerUsers(customerId));
     }
 
     @PostMapping("/customer/{customerId}")
@@ -83,10 +71,7 @@ public class UserProfileController {
     public ResponseEntity<UserProfile> update(@AuthenticationPrincipal UUID callerId,
             @Valid @RequestBody UpdateProfileRequest request) {
         if (callerId == null) throw AppException.unauthorized();
-        UserProfile profile = userProfileRepository.findById(callerId).orElseThrow(AppException::notFound);
-        profile.setName(request.getName());
-        profile.setAvatarUrl(request.getAvatarUrl());
-        return ResponseEntity.ok(userProfileRepository.save(profile));
+        return ResponseEntity.ok(userProfileService.updateMe(callerId, request));
     }
 
     @PutMapping("/{userId}")
@@ -96,20 +81,8 @@ public class UserProfileController {
             @Valid @RequestBody UpdateUserProfileRequest request) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
-
-        UserProfile profile = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
-
-        UUID callerTenant = tenantContext.getCurrentTenant();
-        if (callerTenant != null && profile.getTenant() != null
-                && !profile.getTenant().getId().equals(callerTenant))
-            throw AppException.forbidden();
-
-        if (request.name() != null) profile.setName(request.name());
-        if (request.avatarUrl() != null) profile.setAvatarUrl(request.avatarUrl());
-        if (request.role() != null && authorizationService.isAdminOrAbove(callerId))
-            profile.setRole(request.role());
-
-        return ResponseEntity.ok(userProfileRepository.save(profile));
+        return ResponseEntity.ok(userProfileService.updateUser(
+                userId, callerId, request.name(), request.avatarUrl(), request.role()));
     }
 
     @DeleteMapping("/{userId}")
@@ -117,17 +90,7 @@ public class UserProfileController {
     public ResponseEntity<Void> deleteUser(@PathVariable UUID userId, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();
-
-        UserProfile profile = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
-
-        UUID callerTenant = tenantContext.getCurrentTenant();
-        if (callerTenant != null && profile.getTenant() != null
-                && !profile.getTenant().getId().equals(callerTenant))
-            throw AppException.forbidden();
-
-        if (userId.equals(callerId)) throw AppException.badRequest();
-
-        userProfileRepository.deleteById(userId);
+        userProfileService.deleteUser(userId, callerId);
         return ResponseEntity.noContent().build();
     }
 
