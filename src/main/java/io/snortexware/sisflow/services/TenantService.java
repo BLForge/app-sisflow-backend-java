@@ -1,6 +1,7 @@
 package io.snortexware.sisflow.services;
 
 import io.snortexware.sisflow.dto.TenantRegistrationRequest;
+import io.snortexware.sisflow.dto.UpdateTenantBrandingRequest;
 import io.snortexware.sisflow.entities.EmailConfirmationToken;
 import io.snortexware.sisflow.entities.Tenant;
 import io.snortexware.sisflow.entities.UserProfile;
@@ -10,6 +11,7 @@ import io.snortexware.sisflow.repositories.RoleRepository;
 import io.snortexware.sisflow.repositories.TenantRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.repositories.UserRoleRepository;
+import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -30,6 +33,8 @@ public class TenantService {
     private final EmailConfirmationTokenRepository emailConfirmationTokenRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final AuthorizationService authorizationService;
+    private final TenantContext tenantContext;
 
     @Transactional
     public void register(TenantRegistrationRequest req) {
@@ -74,5 +79,46 @@ public class TenantService {
                 .build());
 
         emailService.sendConfirmationEmail(req.getAdminEmail(), token);
+    }
+
+    @Transactional
+    public Tenant updateBranding(UUID callerId, UpdateTenantBrandingRequest req) {
+        UUID tenantId = tenantContext.getCurrentTenant();
+        if (tenantId == null) throw AppException.unauthorized();
+
+        Tenant tenant = tenantRepository.findById(tenantId).orElseThrow(AppException::notFound);
+
+        if (req.getName() != null && !req.getName().isBlank()) {
+            if (authorizationService.getCurrentUserHierarchyLevel(callerId) < 4) {
+                throw AppException.forbidden();
+            }
+            if (req.getName().length() > 100) throw AppException.badRequest();
+            tenant.setName(req.getName());
+        }
+        if (req.getLogoUrl() != null && !req.getLogoUrl().isBlank()) {
+            validateFileUrl(req.getLogoUrl());
+            tenant.setLogoUrl(req.getLogoUrl());
+        }
+        if (req.getLogoIconUrl() != null && !req.getLogoIconUrl().isBlank()) {
+            validateFileUrl(req.getLogoIconUrl());
+            tenant.setLogoIconUrl(req.getLogoIconUrl());
+        }
+        if (req.getBackgroundUrl() != null && !req.getBackgroundUrl().isBlank()) {
+            validateFileUrl(req.getBackgroundUrl());
+            tenant.setBackgroundUrl(req.getBackgroundUrl());
+        }
+
+        tenant.setUpdatedAt(OffsetDateTime.now());
+        return tenantRepository.save(tenant);
+    }
+
+    public List<Tenant> listTenants() {
+        return tenantRepository.findAll();
+    }
+
+    private void validateFileUrl(String fileUrl) {
+        if (!fileUrl.startsWith("/files/")) {
+            throw AppException.badRequest();
+        }
     }
 }

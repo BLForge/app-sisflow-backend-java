@@ -23,6 +23,7 @@ public class TicketInteractionService {
     private final TicketInteractionRepository ticketInteractionRepository;
     private final TicketRepository ticketRepository;
     private final UserProfileRepository userProfileRepository;
+    private final AuthorizationService authorizationService;
 
     @Transactional
     public TicketInteraction post(UUID ticketId, UUID callerId, CreateInteractionRequest request) {
@@ -52,5 +53,20 @@ public class TicketInteractionService {
         }
 
         return ticketInteractionRepository.findByTicketIdOrderByCreatedAtAsc(ticketId);
+    }
+
+    public List<TicketInteraction> listForCaller(UUID ticketId, UUID callerId) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
+        authorizationService.validateCanViewTicket(callerId, ticket);
+
+        UserProfile caller = userProfileRepository.findById(callerId).orElseThrow(AppException::unauthorized);
+        return list(ticketId, caller.getRole().name());
+    }
+
+    @Transactional
+    public TicketInteraction postForCaller(UUID ticketId, UUID callerId, CreateInteractionRequest request) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElseThrow(AppException::notFound);
+        authorizationService.validateCanViewTicket(callerId, ticket);
+        return post(ticketId, callerId, request);
     }
 }

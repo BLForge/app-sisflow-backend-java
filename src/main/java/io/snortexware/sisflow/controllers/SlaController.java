@@ -3,9 +3,8 @@ package io.snortexware.sisflow.controllers;
 import io.snortexware.sisflow.dto.CreateSlaRequest;
 import io.snortexware.sisflow.dto.UpdateSlaRequest;
 import io.snortexware.sisflow.entities.Sla;
-import io.snortexware.sisflow.repositories.SlaRepository;
 import io.snortexware.sisflow.services.AuthorizationService;
-import io.snortexware.sisflow.security.exceptions.AppException;
+import io.snortexware.sisflow.services.SlaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -14,7 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -24,7 +22,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SlaController extends BaseController {
 
-    private final SlaRepository slaRepository;
+    private final SlaService slaService;
     private final AuthorizationService authorizationService;
 
     @Override
@@ -34,7 +32,7 @@ public class SlaController extends BaseController {
     @Cacheable(value = "slas", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<Sla>> list(@AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
-        return ResponseEntity.ok(slaRepository.findAll());
+        return ResponseEntity.ok(slaService.list());
     }
 
     @PostMapping
@@ -42,12 +40,7 @@ public class SlaController extends BaseController {
     public ResponseEntity<Sla> create(@Valid @RequestBody CreateSlaRequest request,
                                       @AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
-        return ResponseEntity.status(HttpStatus.CREATED).body(slaRepository.save(
-                Sla.builder()
-                        .name(request.getName())
-                        .responseTimeHours(request.getResponseTimeHours())
-                        .resolutionTimeHours(request.getResolutionTimeHours())
-                        .build()));
+        return ResponseEntity.status(HttpStatus.CREATED).body(slaService.create(request));
     }
 
     @PutMapping("/{id}")
@@ -56,11 +49,6 @@ public class SlaController extends BaseController {
                                       @Valid @RequestBody UpdateSlaRequest request,
                                       @AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
-        Sla sla = slaRepository.findById(id)
-                .orElseThrow(AppException::notFound);
-        sla.setName(request.getName());
-        sla.setResponseTimeHours(request.getResponseTimeHours());
-        sla.setResolutionTimeHours(request.getResolutionTimeHours());
-        return ResponseEntity.ok(slaRepository.save(sla));
+        return ResponseEntity.ok(slaService.update(id, request));
     }
 }
