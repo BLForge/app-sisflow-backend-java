@@ -10,12 +10,11 @@ import io.snortexware.sisflow.repositories.RoleRepository;
 import io.snortexware.sisflow.repositories.TenantRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
 import io.snortexware.sisflow.repositories.UserRoleRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -35,10 +34,10 @@ public class TenantService {
     @Transactional
     public void register(TenantRegistrationRequest req) {
         if (tenantRepository.findByDomain(req.getDomain()).isPresent())
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Este domínio já está em uso.");
+            throw AppException.conflict();
 
         if (userProfileRepository.findByEmail(req.getAdminEmail()).isPresent())
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Este e-mail já está cadastrado.");
+            throw AppException.conflict();
 
         Tenant tenant = tenantRepository.save(Tenant.builder()
                 .name(req.getTenantName())
@@ -61,7 +60,6 @@ public class TenantService {
 
         userProfileRepository.saveAndFlush(admin);
 
-        // Assign tenant_admin role (not system_admin)
         roleRepository.findByCode("tenant_admin").ifPresent(role ->
                 userRoleRepository.save(UserRole.builder()
                         .user(admin).role(role).isActive(true).assignedAt(OffsetDateTime.now()).build()));

@@ -1,5 +1,6 @@
 package io.snortexware.sisflow.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.UuidGenerator;
@@ -37,6 +38,8 @@ public class CustomerAccess {
     @Column(name = "username")
     private String username;
 
+    /** Never serialized to API responses. */
+    @JsonIgnore
     @Column(name = "password")
     private String password;
 

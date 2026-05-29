@@ -10,8 +10,7 @@ import java.util.UUID;
 
 public interface AuditEventRepository extends JpaRepository<AuditEvent, UUID> {
     List<AuditEvent> findByTicketIdOrderByCreatedAtDesc(UUID ticketId);
-    
     Page<AuditEvent> findByActorId(UUID actorId, Pageable pageable);
-    
     Page<AuditEvent> findByAction(String action, Pageable pageable);
+    Page<AuditEvent> findByTicket_Customer_Tenant_Id(UUID tenantId, Pageable pageable);
 }

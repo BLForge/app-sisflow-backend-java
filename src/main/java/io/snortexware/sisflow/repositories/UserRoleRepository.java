@@ -1,6 +1,7 @@
 package io.snortexware.sisflow.repositories;
 
 import io.snortexware.sisflow.entities.UserRole;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +16,7 @@ import java.util.UUID;
 @Repository
 public interface UserRoleRepository extends JpaRepository<UserRole, UUID> {
 
+    @EntityGraph(attributePaths = {"role", "role.permissions"})
     @Query("SELECT ur FROM UserRole ur WHERE ur.user.id = :userId AND ur.isActive = true")
     List<UserRole> findActiveByUserId(@Param("userId") UUID userId);
 

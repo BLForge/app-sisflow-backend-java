@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+target
+build
+uploads
+docs
+assets
+*.log
+*.iml
+.env
+node_modules

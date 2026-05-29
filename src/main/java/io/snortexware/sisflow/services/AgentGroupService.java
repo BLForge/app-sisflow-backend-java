@@ -6,11 +6,12 @@ import io.snortexware.sisflow.entities.AgentGroup;
 import io.snortexware.sisflow.entities.UserProfile;
 import io.snortexware.sisflow.repositories.AgentGroupRepository;
 import io.snortexware.sisflow.repositories.UserProfileRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -24,6 +25,7 @@ public class AgentGroupService {
     private final UserProfileRepository userProfileRepository;
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup create(CreateAgentGroupRequest request) {
         AgentGroup group = AgentGroup.builder()
                 .name(request.getName())
@@ -34,40 +36,40 @@ public class AgentGroupService {
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup update(UUID id, UpdateAgentGroupRequest request) {
         AgentGroup group = agentGroupRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent group not found"));
+                .orElseThrow(AppException::notFound);
         group.setName(request.getName());
         group.setDescription(request.getDescription());
         return agentGroupRepository.save(group);
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public void delete(UUID id) {
-        if (!agentGroupRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent group not found");
-        }
+        if (!agentGroupRepository.existsById(id)) throw AppException.notFound();
         agentGroupRepository.deleteById(id);
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup addMember(UUID groupId, UUID userId) {
-        AgentGroup group = agentGroupRepository.findById(groupId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent group not found"));
-        UserProfile user = userProfileRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        AgentGroup group = agentGroupRepository.findById(groupId).orElseThrow(AppException::notFound);
+        UserProfile user = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
         group.getMembers().add(user);
         return agentGroupRepository.save(group);
     }
 
     @Transactional
+    @CacheEvict(value = "agentGroups", allEntries = true)
     public AgentGroup removeMember(UUID groupId, UUID userId) {
-        AgentGroup group = agentGroupRepository.findById(groupId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent group not found"));
+        AgentGroup group = agentGroupRepository.findById(groupId).orElseThrow(AppException::notFound);
         group.getMembers().removeIf(m -> m.getId().equals(userId));
         return agentGroupRepository.save(group);
     }
 
+    @Cacheable(value = "agentGroups", key = "@cacheKeyService.tenantKey('all')")
     public List<AgentGroup> list() {
         return agentGroupRepository.findAll();
     }

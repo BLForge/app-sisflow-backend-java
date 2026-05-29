@@ -2,9 +2,8 @@ package io.snortexware.sisflow.services;
 
 import java.util.UUID;
 
-import org.springframework.http.HttpStatus;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import io.snortexware.sisflow.entities.Customer;
 import io.snortexware.sisflow.entities.UserProfile;
@@ -23,20 +22,15 @@ public class UserProfileService {
 	}
 
 	public UserProfile linkUserToCustomer(UUID customerId, String userIdRaw) {
-
 		UUID userId = parseUUID(userIdRaw);
 
-		Customer customer = customerRepository.findById(customerId).orElseThrow(() -> notFound("Customer not found"));
+		Customer customer = customerRepository.findById(customerId).orElseThrow(AppException::notFound);
+		UserProfile userProfile = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
 
-		UserProfile userProfile = userProfileRepository.findById(userId)
-				.orElseThrow(() -> notFound("User profile not found"));
-
-		if (userProfile.getCustomer() != null) {
-			throw conflict("User already linked to a customer");
-		}
+		if (userProfile.getCustomer() != null)
+			throw AppException.conflict();
 
 		userProfile.setCustomer(customer);
-
 		return userProfileRepository.save(userProfile);
 	}
 
@@ -44,19 +38,7 @@ public class UserProfileService {
 		try {
 			return UUID.fromString(value);
 		} catch (IllegalArgumentException e) {
-			throw badRequest("Invalid user id format");
+			throw AppException.badRequest();
 		}
-	}
-
-	private ResponseStatusException notFound(String msg) {
-		return new ResponseStatusException(HttpStatus.NOT_FOUND, msg);
-	}
-
-	private ResponseStatusException badRequest(String msg) {
-		return new ResponseStatusException(HttpStatus.BAD_REQUEST, msg);
-	}
-
-	private ResponseStatusException conflict(String msg) {
-		return new ResponseStatusException(HttpStatus.CONFLICT, msg);
 	}
 }

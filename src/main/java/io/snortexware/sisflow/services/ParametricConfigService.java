@@ -7,11 +7,12 @@ import io.snortexware.sisflow.entities.TicketTypeConfig;
 import io.snortexware.sisflow.repositories.TicketPriorityConfigRepository;
 import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
 import io.snortexware.sisflow.repositories.TicketTypeConfigRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -24,13 +25,13 @@ public class ParametricConfigService {
     private final TicketPriorityConfigRepository priorityRepository;
     private final TicketTypeConfigRepository typeRepository;
 
-    // --- Status ---
-
+    @Cacheable(value = "ticketConfigs", key = "@cacheKeyService.tenantKey('statuses')")
     public List<TicketStatusConfig> listStatuses() {
         return statusRepository.findAll();
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public TicketStatusConfig createStatus(CreateTicketStatusRequest request) {
         TicketStatusConfig entity = TicketStatusConfig.builder()
                 .name(request.getName())
@@ -43,9 +44,10 @@ public class ParametricConfigService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public TicketStatusConfig updateStatus(UUID id, UpdateTicketStatusRequest request) {
         TicketStatusConfig entity = statusRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Status not found"));
+                .orElseThrow(AppException::notFound);
         entity.setName(request.getName());
         entity.setColor(request.getColor());
         entity.setDefault(request.isDefault());
@@ -55,23 +57,20 @@ public class ParametricConfigService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public void deleteStatus(UUID id) {
-        if (!statusRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Status not found");
-        }
-        if (statusRepository.existsTicketReferencingStatus(id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Status is referenced by existing tickets");
-        }
+        if (!statusRepository.existsById(id)) throw AppException.notFound();
+        if (statusRepository.existsTicketReferencingStatus(id)) throw AppException.conflict();
         statusRepository.deleteById(id);
     }
 
-    // --- Priority ---
-
+    @Cacheable(value = "ticketConfigs", key = "@cacheKeyService.tenantKey('priorities')")
     public List<TicketPriorityConfig> listPriorities() {
         return priorityRepository.findAll();
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public TicketPriorityConfig createPriority(CreateTicketPriorityRequest request) {
         TicketPriorityConfig entity = TicketPriorityConfig.builder()
                 .name(request.getName())
@@ -83,9 +82,10 @@ public class ParametricConfigService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public TicketPriorityConfig updatePriority(UUID id, UpdateTicketPriorityRequest request) {
         TicketPriorityConfig entity = priorityRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Priority not found"));
+                .orElseThrow(AppException::notFound);
         entity.setName(request.getName());
         entity.setColor(request.getColor());
         entity.setSlaMultiplier(request.getSlaMultiplier());
@@ -94,23 +94,20 @@ public class ParametricConfigService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public void deletePriority(UUID id) {
-        if (!priorityRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Priority not found");
-        }
-        if (priorityRepository.existsTicketReferencingPriority(id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Priority is referenced by existing tickets");
-        }
+        if (!priorityRepository.existsById(id)) throw AppException.notFound();
+        if (priorityRepository.existsTicketReferencingPriority(id)) throw AppException.conflict();
         priorityRepository.deleteById(id);
     }
 
-    // --- Type ---
-
+    @Cacheable(value = "ticketConfigs", key = "@cacheKeyService.tenantKey('types')")
     public List<TicketTypeConfig> listTypes() {
         return typeRepository.findAll();
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public TicketTypeConfig createType(CreateTicketTypeRequest request) {
         TicketTypeConfig entity = TicketTypeConfig.builder()
                 .name(request.getName())
@@ -121,9 +118,10 @@ public class ParametricConfigService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public TicketTypeConfig updateType(UUID id, UpdateTicketTypeRequest request) {
         TicketTypeConfig entity = typeRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Type not found"));
+                .orElseThrow(AppException::notFound);
         entity.setName(request.getName());
         entity.setIcon(request.getIcon());
         entity.setDescription(request.getDescription());
@@ -131,13 +129,10 @@ public class ParametricConfigService {
     }
 
     @Transactional
+    @CacheEvict(value = "ticketConfigs", allEntries = true)
     public void deleteType(UUID id) {
-        if (!typeRepository.existsById(id)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Type not found");
-        }
-        if (typeRepository.existsTicketReferencingType(id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Type is referenced by existing tickets");
-        }
+        if (!typeRepository.existsById(id)) throw AppException.notFound();
+        if (typeRepository.existsTicketReferencingType(id)) throw AppException.conflict();
         typeRepository.deleteById(id);
     }
 }

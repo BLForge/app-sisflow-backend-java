@@ -1,5 +1,6 @@
 package io.snortexware.sisflow.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -18,11 +19,12 @@ public class UserProfile {
     @Column(columnDefinition = "uuid")
     private UUID id;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
 
-    // Only set for end_users — the customer company they belong to
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "customer_id")
     private Customer customer;
@@ -30,6 +32,7 @@ public class UserProfile {
     @Column(name = "email", unique = true)
     private String email;
 
+    @JsonIgnore
     @Column(name = "password_hash")
     private String passwordHash;
 
@@ -39,11 +42,13 @@ public class UserProfile {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    @JsonIgnore
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false)
     @Builder.Default
     private UserType type = UserType.agent;
 
+    @JsonIgnore
     @Column(name = "email_confirmed", nullable = false)
     @Builder.Default
     private boolean emailConfirmed = false;
@@ -51,10 +56,10 @@ public class UserProfile {
     @Column(name = "created_at", updatable = false)
     private OffsetDateTime createdAt;
 
+    @JsonIgnore
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 
-    // Legacy — kept for backward compat with role-based checks in existing code
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
     @Builder.Default

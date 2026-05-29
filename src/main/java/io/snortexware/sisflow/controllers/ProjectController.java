@@ -8,8 +8,12 @@ import io.snortexware.sisflow.entities.TicketStatusConfig;
 import io.snortexware.sisflow.repositories.ProjectRepository;
 import io.snortexware.sisflow.repositories.SystemRepository;
 import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
+import io.snortexware.sisflow.security.exceptions.AppException;
 import io.snortexware.sisflow.services.AuthorizationService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,11 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/projects")
+@RequiredArgsConstructor
 public class ProjectController {
 
     private final ProjectRepository projectRepository;
@@ -29,176 +33,85 @@ public class ProjectController {
     private final TicketStatusConfigRepository ticketStatusConfigRepository;
     private final AuthorizationService authorizationService;
 
-    public ProjectController(ProjectRepository projectRepository, 
-                           SystemRepository systemRepository,
-                           TicketStatusConfigRepository ticketStatusConfigRepository,
-                           AuthorizationService authorizationService) {
-        this.projectRepository = projectRepository;
-        this.systemRepository = systemRepository;
-        this.ticketStatusConfigRepository = ticketStatusConfigRepository;
-        this.authorizationService = authorizationService;
-    }
-
     @PostMapping
     @Transactional
-    public ResponseEntity<Project> create(@Valid @RequestBody CreateProjectRequest request, @AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            // Only admins can create projects
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
+    @CacheEvict(value = "projects", allEntries = true)
+    public ResponseEntity<Project> create(@Valid @RequestBody CreateProjectRequest request,
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
 
-        Optional<System> system = systemRepository.findById(request.getSystemId());
-        if (system.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
+        System system = systemRepository.findById(request.getSystemId()).orElseThrow(AppException::badRequest);
 
         TicketStatusConfig pullRequestStatus = null;
-        if (request.getPullRequestStatusId() != null) {
-            Optional<TicketStatusConfig> statusConfig = ticketStatusConfigRepository.findById(request.getPullRequestStatusId());
-            if (statusConfig.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-            }
-            pullRequestStatus = statusConfig.get();
-        }
+        if (request.getPullRequestStatusId() != null)
+            pullRequestStatus = ticketStatusConfigRepository.findById(request.getPullRequestStatusId())
+                    .orElseThrow(AppException::badRequest);
 
         Project project = Project.builder()
-                .name(request.getName())
-                .description(request.getDescription())
-                .system(system.get())
-                .githubRepository(request.getGithubRepository())
-                .githubOwner(request.getGithubOwner())
-                .pullRequestStatus(pullRequestStatus)
-                .status(Project.Status.active)
-                .build();
+                .name(request.getName()).description(request.getDescription())
+                .system(system).githubRepository(request.getGithubRepository())
+                .githubOwner(request.getGithubOwner()).pullRequestStatus(pullRequestStatus)
+                .status(Project.Status.active).build();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(projectRepository.save(project));
     }
 
     @GetMapping
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<Project>> list(@AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            // Only admins can view all projects
-            if (authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.ok(projectRepository.findAll());
-            } else {
-                return ResponseEntity.ok(List.of());
-            }
-        } catch (Exception e) {
-            return ResponseEntity.ok(List.of());
-        }
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
+        return ResponseEntity.ok(projectRepository.findAll());
     }
 
     @GetMapping("/{id}")
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('id', #id)")
     public ResponseEntity<Project> getById(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            // Only admins can view projects
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        
-        return projectRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
+        return ResponseEntity.ok(projectRepository.findById(id).orElseThrow(AppException::notFound));
     }
 
     @GetMapping("/system/{systemId}")
-    public ResponseEntity<List<Project>> listBySystem(@PathVariable UUID systemId, @AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            // Only admins can view projects
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('system', #systemId)")
+    public ResponseEntity<List<Project>> listBySystem(@PathVariable UUID systemId,
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
         return ResponseEntity.ok(projectRepository.findBySystemId(systemId));
     }
 
     @PutMapping("/{id}")
     @Transactional
-    public ResponseEntity<Project> update(@PathVariable UUID id, @Valid @RequestBody UpdateProjectRequest request, @AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            // Only admins can update projects
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
+    @CacheEvict(value = "projects", allEntries = true)
+    public ResponseEntity<Project> update(@PathVariable UUID id,
+            @Valid @RequestBody UpdateProjectRequest request,
+            @AuthenticationPrincipal UUID callerId) {
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
 
-        Optional<Project> existingProject = projectRepository.findById(id);
-        if (existingProject.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-        }
+        Project project = projectRepository.findById(id).orElseThrow(AppException::notFound);
 
-        Project project = existingProject.get();
+        if (request.getPullRequestStatusId() != null)
+            project.setPullRequestStatus(ticketStatusConfigRepository
+                    .findById(request.getPullRequestStatusId()).orElseThrow(AppException::badRequest));
 
-        if (request.getPullRequestStatusId() != null) {
-            Optional<TicketStatusConfig> statusConfig = ticketStatusConfigRepository.findById(request.getPullRequestStatusId());
-            if (statusConfig.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-            }
-            project.setPullRequestStatus(statusConfig.get());
-        }
-
-        project.setName(request.getName());
-        project.setDescription(request.getDescription());
+        project.setName(request.getName()); project.setDescription(request.getDescription());
         project.setGithubRepository(request.getGithubRepository());
         project.setGithubOwner(request.getGithubOwner());
-        if (request.getStatus() != null) {
-            project.setStatus(request.getStatus());
-        }
+        if (request.getStatus() != null) project.setStatus(request.getStatus());
 
         return ResponseEntity.ok(projectRepository.save(project));
     }
 
     @DeleteMapping("/{id}")
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id, @AuthenticationPrincipal UUID callerId) {
-        if (callerId == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        
-        try {
-            // Only admins can delete projects
-            if (!authorizationService.isAdminOrAbove(callerId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        
-        if (!projectRepository.existsById(id)) {
-            return ResponseEntity.notFound().build();
-        }
+        if (callerId == null) throw AppException.unauthorized();
+        if (!authorizationService.isAdminOrAbove(callerId)) throw AppException.forbidden();
+        if (!projectRepository.existsById(id)) throw AppException.notFound();
         projectRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }

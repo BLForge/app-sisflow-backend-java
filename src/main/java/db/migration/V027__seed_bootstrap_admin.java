@@ -23,16 +23,14 @@ public class V027__seed_bootstrap_admin extends BaseJavaMigration {
 
         if (email == null || email.isBlank() || password == null || password.isBlank()) return;
 
-        // Check if email already exists
         try (PreparedStatement check = context.getConnection()
                 .prepareStatement("SELECT id FROM users WHERE email = ?")) {
             check.setString(1, email);
             try (ResultSet rs = check.executeQuery()) {
-                if (rs.next()) return; // already exists
+                if (rs.next()) return;
             }
         }
 
-        // Find highest hierarchy role
         UUID roleId = null;
         try (PreparedStatement rs = context.getConnection()
                 .prepareStatement("SELECT id FROM roles WHERE is_active = true ORDER BY hierarchy_level DESC LIMIT 1")) {

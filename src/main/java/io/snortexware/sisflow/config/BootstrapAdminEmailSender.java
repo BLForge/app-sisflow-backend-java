@@ -35,7 +35,6 @@ public class BootstrapAdminEmailSender implements ApplicationRunner {
         userProfileRepository.findByEmail(bootstrapEmail).ifPresent(user -> {
             if (user.isEmailConfirmed()) return;
 
-            // Only send if no pending token exists
             boolean hasToken = emailConfirmationTokenRepository
                     .findAll().stream()
                     .anyMatch(t -> t.getUserId().equals(user.getId()) && !t.isUsed());

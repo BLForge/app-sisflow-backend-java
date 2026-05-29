@@ -7,7 +7,7 @@ public class CnpjValidator implements ConstraintValidator<Cnpj, String> {
 
     @Override
     public boolean isValid(String value, ConstraintValidatorContext context) {
-        if (value == null || value.isBlank()) return true; // let @NotBlank handle nulls
+        if (value == null || value.isBlank()) return true;
 
         String cnpj = value.replaceAll("[.\\-/]", "");
 

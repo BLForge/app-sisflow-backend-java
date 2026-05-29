@@ -31,6 +31,15 @@ public class Tenant {
     @Builder.Default
     private Status status = Status.active;
 
+    @Column(name = "logo_url")
+    private String logoUrl;
+
+    @Column(name = "logo_icon_url")
+    private String logoIconUrl;
+
+    @Column(name = "background_url")
+    private String backgroundUrl;
+
     @Column(name = "created_at", updatable = false)
     private OffsetDateTime createdAt;
 

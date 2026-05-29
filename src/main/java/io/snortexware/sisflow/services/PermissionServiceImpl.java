@@ -19,8 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-
-import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -55,16 +53,14 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @CacheEvict(value = "permissions", allEntries = true)
+    @CacheEvict(value = {"permissions", "rolePermissions", "userPermissions"}, allEntries = true)
     public Permission createPermission(CreatePermissionRequest request) {
         log.info("Creating new permission: {}", request.getCode());
 
-        // Validate permission code is unique
         if (permissionRepository.findByCode(request.getCode()).isPresent()) {
             throw new InvalidPermissionException("Permission with code '" + request.getCode() + "' already exists");
         }
 
-        // Validate permission code format (resource:action)
         if (!request.getCode().matches("^[a-z_]+:[a-z_]+$")) {
             throw new InvalidPermissionException(
                     "Invalid permission code format. Must follow pattern: resource:action (e.g., ticket:create)");
@@ -86,14 +82,13 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @CacheEvict(value = "permissions", allEntries = true)
+    @CacheEvict(value = {"permissions", "rolePermissions", "userPermissions"}, allEntries = true)
     public Permission updatePermission(UUID permissionId, UpdatePermissionRequest request) {
         log.info("Updating permission: {}", permissionId);
 
         Permission permission = permissionRepository.findById(permissionId)
                 .orElseThrow(() -> new InvalidPermissionException("Permission not found: " + permissionId));
 
-        // Prevent modification of system permissions
         if (permission.getIsSystem()) {
             throw new AccessDeniedException("Cannot modify system permissions");
         }
@@ -112,19 +107,17 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @CacheEvict(value = "permissions", allEntries = true)
+    @CacheEvict(value = {"permissions", "rolePermissions", "userPermissions"}, allEntries = true)
     public void deletePermission(UUID permissionId) {
         log.info("Deleting permission: {}", permissionId);
 
         Permission permission = permissionRepository.findById(permissionId)
                 .orElseThrow(() -> new InvalidPermissionException("Permission not found: " + permissionId));
 
-        // Prevent deletion of system permissions
         if (permission.getIsSystem()) {
             throw new AccessDeniedException("Cannot delete system permissions");
         }
 
-        // Check if permission is assigned to roles with active users
         List<Role> rolesWithPermission = roleRepository.findAll().stream()
                 .filter(role -> role.getPermissions().contains(permission))
                 .collect(Collectors.toList());
@@ -144,26 +137,27 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @Cacheable(value = "permissions", key = "#permissionId")
+    @Cacheable(value = "permissions", key = "@cacheKeyService.tenantKey(#permissionId)")
     public Permission getPermissionById(UUID permissionId) {
         return permissionRepository.findById(permissionId)
                 .orElseThrow(() -> new InvalidPermissionException("Permission not found: " + permissionId));
     }
 
     @Override
-    @Cacheable(value = "permissions", key = "'all'")
+    @Cacheable(value = "permissions", key = "@cacheKeyService.tenantKey('all')")
     public List<Permission> getAllPermissions() {
         return permissionRepository.findByIsActiveTrue();
     }
 
     @Override
+    @Cacheable(value = "permissions", key = "@cacheKeyService.tenantKey('code', #code)")
     public Permission getPermissionByCode(String code) {
         return permissionRepository.findByCode(code)
                 .orElseThrow(() -> new InvalidPermissionException("Permission not found: " + code));
     }
 
     @Override
-    @CacheEvict(value = {"permissions", "userPermissions"}, allEntries = true)
+    @CacheEvict(value = {"permissions", "rolePermissions", "userPermissions"}, allEntries = true)
     public void grantPermissionToRole(UUID roleId, UUID permissionId) {
         log.info("Granting permission {} to role {}", permissionId, roleId);
 
@@ -172,7 +166,6 @@ public class PermissionServiceImpl implements PermissionService {
 
         Permission permission = getPermissionById(permissionId);
 
-        // Check if permission is already assigned
         if (role.getPermissions().contains(permission)) {
             throw new InvalidPermissionException("Permission already assigned to this role");
         }
@@ -185,7 +178,7 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @CacheEvict(value = {"permissions", "userPermissions"}, allEntries = true)
+    @CacheEvict(value = {"permissions", "rolePermissions", "userPermissions"}, allEntries = true)
     public void revokePermissionFromRole(UUID roleId, UUID permissionId) {
         log.info("Revoking permission {} from role {}", permissionId, roleId);
 
@@ -194,7 +187,6 @@ public class PermissionServiceImpl implements PermissionService {
 
         Permission permission = getPermissionById(permissionId);
 
-        // Check if permission is assigned
         if (!role.getPermissions().contains(permission)) {
             throw new InvalidPermissionException("Permission not assigned to this role");
         }
@@ -207,7 +199,7 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @Cacheable(value = "rolePermissions", key = "#roleId")
+    @Cacheable(value = "rolePermissions", key = "@cacheKeyService.tenantKey(#roleId)")
     public Set<Permission> getRolePermissions(UUID roleId) {
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new InvalidPermissionException("Role not found: " + roleId));
@@ -215,7 +207,7 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @Cacheable(value = "userPermissions", key = "#userId")
+    @Cacheable(value = "userPermissions", key = "@cacheKeyService.tenantKey('has', #userId, #permissionCode)")
     public boolean hasPermission(UUID userId, String permissionCode) {
         Set<Permission> userPermissions = getUserPermissions(userId);
         return userPermissions.stream()
@@ -239,23 +231,19 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
-    @Cacheable(value = "userPermissions", key = "#userId")
+    @Cacheable(value = "userPermissions", key = "@cacheKeyService.tenantKey('user', #userId)")
     public Set<Permission> getUserPermissions(UUID userId) {
         Set<Permission> permissions = new HashSet<>();
 
-        // Get all active roles for the user
         List<UserRole> userRoles = userRoleRepository.findActiveByUserId(userId);
 
-        // Collect all permissions from all roles
         for (UserRole userRole : userRoles) {
             permissions.addAll(userRole.getRole().getPermissions());
         }
 
-        // Add resource-level permissions
         List<ResourcePermission> resourcePermissions = resourcePermissionRepository.findByUserId(userId);
         for (ResourcePermission rp : resourcePermissions) {
             if (!rp.isExpired() && rp.getIsActive()) {
-                // Create a virtual permission for resource-level access
                 Permission permission = Permission.builder()
                         .code(rp.getResourceType() + ":" + rp.getAction().toLowerCase())
                         .name(rp.getResourceType() + " " + rp.getAction())
@@ -272,7 +260,6 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     public boolean canAccessResource(UUID userId, UUID resourceId, String action) {
-        // Check resource-level permissions
         List<ResourcePermission> resourcePermissions = resourcePermissionRepository
                 .findActiveByResourceIdAndUserId(resourceId, userId, OffsetDateTime.now());
 
@@ -282,14 +269,12 @@ public class PermissionServiceImpl implements PermissionService {
             }
         }
 
-        // Check role-based permissions
         String permissionCode = "resource:" + action.toLowerCase();
         return hasPermission(userId, permissionCode);
     }
 
     @Override
     public boolean canAccessTicket(UUID userId, UUID ticketId, String action) {
-        // Check resource-level permissions for ticket
         List<ResourcePermission> ticketPermissions = resourcePermissionRepository
                 .findActiveByResourceIdAndUserId(ticketId, userId, OffsetDateTime.now());
 
@@ -299,12 +284,12 @@ public class PermissionServiceImpl implements PermissionService {
             }
         }
 
-        // Check role-based permissions
         String permissionCode = "ticket:" + action.toLowerCase();
         return hasPermission(userId, permissionCode);
     }
 
     @Override
+    @Cacheable(value = "permissions", key = "@cacheKeyService.tenantKey('category', #category)")
     public List<Permission> getPermissionsByCategory(String category) {
         return permissionRepository.findByCategory(category);
     }
