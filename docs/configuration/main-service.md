@@ -72,7 +72,11 @@ Arquivo base: `src/main/resources/application.properties`
 | `security.login.rate-limit-capacity` | `SECURITY_LOGIN_RATE_LIMIT_CAPACITY` | `30` | nao | Capacidade do bucket de login. |
 | `security.login.rate-limit-window-minutes` | `SECURITY_LOGIN_RATE_LIMIT_WINDOW_MINUTES` | `1` | nao | Janela do bucket de login. |
 | `security.login.lockout-duration-minutes` | `SECURITY_LOGIN_LOCKOUT_DURATION_MINUTES` | `15` | nao | Duracao do lockout de login. |
-| `file.upload.base-dir` | `FILE_UPLOAD_BASE_DIR` | `./uploads` | nao | Diretório fisico dos uploads expostos em `/files/**`. |
+| `file.upload.base-dir` | `FILE_UPLOAD_BASE_DIR` | `./uploads` | nao | Diretório fisico onde o backend grava uploads para serem servidos externamente pelo Nginx. |
+| `file.download.token.ttl-seconds` | `FILE_DOWNLOAD_TOKEN_TTL_SECONDS` | `60` | nao | TTL dos tokens de download privado emitidos pelo backend. |
+| `file.download.token.issue-limit-per-minute` | `FILE_DOWNLOAD_TOKEN_ISSUE_LIMIT_PER_MINUTE` | `60` | nao | Limite por minuto para emissao de tokens de download. |
+| `file.download.token.resolve-limit-per-minute` | `FILE_DOWNLOAD_TOKEN_RESOLVE_LIMIT_PER_MINUTE` | `180` | nao | Limite por minuto para resolucao de tokens via endpoint interno. |
+| `file.accel.redirect.prefix` | `FILE_ACCEL_REDIRECT_PREFIX` | `/_protected_files` | nao | Prefixo interno usado pelo Nginx com `X-Accel-Redirect`. |
 | `BOOTSTRAP_ADMIN_EMAIL` | `BOOTSTRAP_ADMIN_EMAIL` | vazio | opcional | Se preenchido, ativa semeadura do primeiro admin. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | `BOOTSTRAP_ADMIN_PASSWORD` | vazio | opcional | Senha inicial do admin bootstrap. |
 | `BOOTSTRAP_ADMIN_NAME` | `BOOTSTRAP_ADMIN_NAME` | `Admin` | opcional | Nome do admin bootstrap. |

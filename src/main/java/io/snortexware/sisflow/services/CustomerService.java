@@ -9,6 +9,8 @@ import io.snortexware.sisflow.repositories.TenantRepository;
 import io.snortexware.sisflow.security.TenantContext;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ public class CustomerService {
     private final TenantContext tenantContext;
 
     @Transactional
+    @CacheEvict(value = "customers", allEntries = true)
     public Customer create(CreateCustomerRequest request) {
         if (customerRepository.findByDocument(request.getDocument()).isPresent()) {
             throw AppException.conflict();
@@ -54,6 +57,7 @@ public class CustomerService {
         return customerRepository.save(customer);
     }
 
+    @Cacheable(value = "customers", key = "@cacheKeyService.tenantKey('all')")
     public List<Customer> list() {
         UUID tenantId = tenantContext.getCurrentTenant();
         return tenantId != null
@@ -62,6 +66,7 @@ public class CustomerService {
     }
 
     @Transactional
+    @CacheEvict(value = "customers", allEntries = true)
     public Customer update(UUID id, UpdateCustomerRequest request) {
         Customer customer = customerRepository.findById(id).orElseThrow(AppException::notFound);
 

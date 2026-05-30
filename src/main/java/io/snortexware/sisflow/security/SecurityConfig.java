@@ -69,7 +69,7 @@ public class SecurityConfig {
                 )
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/**", "/health", "/tenants/register", "/tenants/branding", "/files/**", "/swagger-ui/**", "/v3/api-docs/**", "/github/webhook").permitAll()
+                        .requestMatchers("/auth/**", "/health", "/tenants/register", "/tenants/branding", "/swagger-ui/**", "/v3/api-docs/**", "/github/webhook", "/internal/files/download/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(localhostOnlyFilter,

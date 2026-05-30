@@ -7,6 +7,7 @@ Referencia de configuracao do backend e dos servicos auxiliares.
 - [main-service.md](main-service.md): aplicacao principal `sisflow`
 - [auth-service.md](auth-service.md): servico de autenticacao
 - [notification-service.md](notification-service.md): servico de notificacoes
+- [docker-compose.md](docker-compose.md): variaveis da stack Docker Compose da raiz
 
 ## Template
 

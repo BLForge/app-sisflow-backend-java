@@ -10,7 +10,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -40,7 +39,6 @@ public class CustomerController {
     }
 
     @GetMapping
-    @Cacheable(value = "customers", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<Customer>> list(@AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();

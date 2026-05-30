@@ -19,6 +19,8 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> 
     Optional<UserProfile> findByEmail(String email);
     List<UserProfile> findByTenant_Id(UUID tenantId);
     List<UserProfile> findByCustomerId(UUID customerId);
+    boolean existsByAvatarUrlAndTenant_Id(String avatarUrl, UUID tenantId);
+    boolean existsByIdAndAvatarUrl(UUID id, String avatarUrl);
     @Query("SELECT COUNT(ur) > 0 FROM UserRole ur JOIN ur.role r WHERE ur.user.id = :userId AND r.code = 'system_admin' AND ur.isActive = true")
     boolean hasSystemAdminRole(@Param("userId") UUID userId);
 }
