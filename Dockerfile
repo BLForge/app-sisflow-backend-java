@@ -18,6 +18,6 @@ COPY --from=build /app/target/sisflow-0.0.1-SNAPSHOT.jar app.jar
 RUN chown sisflow:sisflow /app/app.jar
 USER sisflow
 
-EXPOSE 8080
+EXPOSE 9090
 
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]

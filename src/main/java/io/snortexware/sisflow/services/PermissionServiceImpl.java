@@ -76,6 +76,7 @@ public class PermissionServiceImpl implements PermissionService {
                 .build();
 
         Permission savedPermission = permissionRepository.save(permission);
+
         log.info("Permission created successfully: {} (id={})", savedPermission.getCode(), savedPermission.getId());
 
         return savedPermission;
