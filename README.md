@@ -4,39 +4,21 @@
 
 # SisFlow Backend
 
-Backend do SisFlow, uma plataforma multi-tenant para operação de service desk com autenticação JWT, controle de acesso por hierarquia, integrações externas e trilha de auditoria.
+Backend do SisFlow, uma plataforma multi-tenant para service desk com autenticação JWT, RBAC, auditoria, filas de notificação e persistência relacional.
 
-## Visão Geral
+## Serviços deste repositório
 
-- API principal em Spring Boot para gestão de tickets, clientes, projetos, SLA, permissões e tenants.
-- Serviços auxiliares para autenticação e notificações em uma estrutura preparada para evolução modular.
-- Persistência com PostgreSQL e Flyway, além de Redis para cache e rate limiting.
+- `ticket-service`: API principal de negócio.
+- `auth-service`: autenticação, refresh token e fluxos de conta.
+- `notification-service`: envio assíncrono de notificações.
 
-## Principais Capacidades
+Infra obrigatória deste backend:
 
-- Multi-tenancy com isolamento por tenant.
-- Autenticação JWT com refresh token.
-- Autorização por papéis, permissões e nível hierárquico.
-- Gestão completa de tickets, interações, anexos e homologação.
-- Integração com GitHub para automações de fluxo.
-- Upload seguro de arquivos e trilha de auditoria.
+- PostgreSQL
+- Redis
+- RabbitMQ
 
-## Arquitetura
-
-O backend está organizado em uma aplicação principal e dois serviços preparados para evolução independente:
-
-- `sisflow`:
-  núcleo da plataforma, APIs de negócio, tenancy, tickets, autorização, auditoria e integrações.
-- `auth-service`:
-  serviço dedicado a autenticação, tokens, confirmação de e-mail e rate limiting de login.
-- `notification-service`:
-  processamento assíncrono de notificações por e-mail via mensageria.
-
-Fluxo macro:
-
-1. O cliente autentica no `auth-service` ou na aplicação principal, conforme o cenário de implantação.
-2. A API principal processa operações de negócio e publica eventos de notificação.
-3. O `notification-service` consome filas e envia e-mails desacoplados da requisição principal.
+Nginx não faz parte deste repositório. O proxy reverso está no repositório do frontend, que publica a SPA e encaminha `/api` para estes serviços.
 
 ## Stack
 
@@ -44,69 +26,67 @@ Fluxo macro:
 - Spring Boot
 - Spring Security
 - Spring Data JPA
-- PostgreSQL
 - Flyway
+- PostgreSQL
 - Redis
 - RabbitMQ
-
-## Infraestrutura
-
-- `PostgreSQL`:
-  persistência transacional da aplicação, incluindo tenants, tickets, auditoria e controle de acesso.
-- `Redis`:
-  cache distribuído, rate limiting e controle de tentativas de autenticação.
-- `RabbitMQ`:
-  mensageria entre autenticação e notificações, desacoplando o envio de e-mails do fluxo principal.
-- `Nginx`:
-  reverse proxy à frente da aplicação para roteamento, TLS e encaminhamento controlado de headers confiáveis.
 
 ## Estrutura
 
 ```text
 .
 ├── src/                           aplicação principal
-├── services/auth-service/         serviço dedicado de autenticação
+├── services/auth-service/         serviço de autenticação
 ├── services/notification-service/ serviço de notificações
 ├── docs/                          documentação técnica e de segurança
-├── scripts/sql/                   utilitários operacionais de banco
-└── assets/                        identidade visual do repositório
+├── docker-compose.yml             stack do backend
+└── assets/                        identidade visual do projeto
 ```
 
-## Microserviços
+## Execução local
 
-| Componente | Responsabilidade | Stack |
-| --- | --- | --- |
-| `sisflow` | operação do service desk, tenancy, tickets, RBAC, integrações | Spring Boot, JPA, PostgreSQL, Redis |
-| `auth-service` | autenticação, JWT, refresh token, confirmação de e-mail | Spring Boot, JPA, Redis, RabbitMQ |
-| `notification-service` | envio assíncrono de notificações | Spring Boot, RabbitMQ, Resend |
-
-## Execução Local
+API principal:
 
 ```bash
-mvn clean test
-mvn spring-boot:run
+./mvnw clean test
+./mvnw spring-boot:run
 ```
 
-Variáveis esperadas no ambiente:
+Cada microserviço também pode ser executado no próprio diretório com `mvn spring-boot:run`.
 
-- `SPRING_DATASOURCE_URL`
-- `SPRING_DATASOURCE_USERNAME`
-- `SPRING_DATASOURCE_PASSWORD`
-- `JWT_SECRET`
-- `APP_BASE_URL`
+## Docker
 
-## Container
-
-Build principal:
+1. Crie o arquivo de ambiente:
 
 ```bash
-docker build -t sisflow-backend .
-docker run --rm -p 8080:8080 sisflow-backend
+cp .env.example .env
 ```
+
+2. Suba a stack do backend:
+
+```bash
+docker compose up --build
+```
+
+Portas padrão:
+
+- `8080`: `ticket-service`
+- `8081`: `auth-service`
+- `8082`: `notification-service`
+- `5432`: PostgreSQL
+- `6379`: Redis
+- `5672`: RabbitMQ
+- `15672`: painel do RabbitMQ
+
+Observações:
+
+- O `ticket-service` escuta internamente em `9090`.
+- O `auth-service` escuta internamente em `9091`.
+- O `notification-service` escuta internamente em `9092`.
+- O Dockerfile principal agora expõe `9090`, alinhado com `server.port`.
 
 ## Documentação
 
 - Visão geral técnica: [docs/README.md](docs/README.md)
 - Arquitetura: [docs/microservices-ddd-architecture.md](docs/microservices-ddd-architecture.md)
 - Segurança: [docs/security](docs/security)
-- Utilitários SQL: [scripts/sql/README.md](scripts/sql/README.md)
