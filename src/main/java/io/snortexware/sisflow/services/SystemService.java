@@ -8,6 +8,8 @@ import io.snortexware.sisflow.repositories.CustomerRepository;
 import io.snortexware.sisflow.repositories.SystemRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ public class SystemService {
     private final CustomerRepository customerRepository;
 
     @Transactional
+    @CacheEvict(value = "systems", allEntries = true)
     public System create(CreateSystemRequest request) {
         Customer customer = customerRepository.findById(request.getCustomerId()).orElseThrow(AppException::badRequest);
 
@@ -37,19 +40,23 @@ public class SystemService {
         return systemRepository.save(system);
     }
 
+    @Cacheable(value = "systems", key = "@cacheKeyService.tenantKey('all')")
     public List<System> list() {
         return systemRepository.findAll();
     }
 
+    @Cacheable(value = "systems", key = "@cacheKeyService.tenantKey('id', #id)")
     public System getById(UUID id) {
         return systemRepository.findById(id).orElseThrow(AppException::notFound);
     }
 
+    @Cacheable(value = "systems", key = "@cacheKeyService.tenantKey('customer', #customerId)")
     public List<System> listByCustomer(UUID customerId) {
         return systemRepository.findByCustomerId(customerId);
     }
 
     @Transactional
+    @CacheEvict(value = "systems", allEntries = true)
     public System update(UUID id, UpdateSystemRequest request) {
         System system = systemRepository.findById(id).orElseThrow(AppException::notFound);
         system.setName(request.getName());
@@ -63,6 +70,7 @@ public class SystemService {
     }
 
     @Transactional
+    @CacheEvict(value = "systems", allEntries = true)
     public void delete(UUID id) {
         if (!systemRepository.existsById(id)) {
             throw AppException.notFound();

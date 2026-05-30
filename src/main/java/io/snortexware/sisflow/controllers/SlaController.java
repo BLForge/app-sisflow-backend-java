@@ -8,7 +8,6 @@ import io.snortexware.sisflow.services.SlaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,7 +28,6 @@ public class SlaController extends BaseController {
     protected AuthorizationService authorizationService() { return authorizationService; }
 
     @GetMapping
-    @Cacheable(value = "slas", key = "@cacheKeyService.tenantKey('all')")
     public ResponseEntity<List<Sla>> list(@AuthenticationPrincipal UUID callerId) {
         requireModerator(callerId);
         return ResponseEntity.ok(slaService.list());

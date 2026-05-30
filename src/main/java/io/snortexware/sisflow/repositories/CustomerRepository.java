@@ -10,4 +10,5 @@ import java.util.UUID;
 public interface CustomerRepository extends JpaRepository<Customer, UUID> {
     Optional<Customer> findByDocument(String document);
     List<Customer> findByTenant_Id(UUID tenantId);
+    boolean existsByLogoUrlAndTenant_Id(String logoUrl, UUID tenantId);
 }

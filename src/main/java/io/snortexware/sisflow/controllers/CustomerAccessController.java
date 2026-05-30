@@ -8,7 +8,6 @@ import io.snortexware.sisflow.services.CustomerAccessService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,7 +26,6 @@ public class CustomerAccessController {
     private final AuthorizationService authorizationService;
 
     @GetMapping
-    @Cacheable(value = "customerAccesses", key = "@cacheKeyService.tenantKey(#customerId)")
     public ResponseEntity<List<CustomerAccess>> list(@PathVariable UUID customerId, @AuthenticationPrincipal UUID callerId) {
         if (callerId == null) throw AppException.unauthorized();
         if (!authorizationService.isModeratorOrAbove(callerId)) throw AppException.forbidden();

@@ -10,6 +10,8 @@ import io.snortexware.sisflow.repositories.SystemRepository;
 import io.snortexware.sisflow.repositories.TicketStatusConfigRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ public class ProjectService {
     private final TicketStatusConfigRepository ticketStatusConfigRepository;
 
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public Project create(CreateProjectRequest request) {
         System system = systemRepository.findById(request.getSystemId()).orElseThrow(AppException::badRequest);
 
@@ -47,19 +50,23 @@ public class ProjectService {
         return projectRepository.save(project);
     }
 
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('all')")
     public List<Project> list() {
         return projectRepository.findAll();
     }
 
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('id', #id)")
     public Project getById(UUID id) {
         return projectRepository.findById(id).orElseThrow(AppException::notFound);
     }
 
+    @Cacheable(value = "projects", key = "@cacheKeyService.tenantKey('system', #systemId)")
     public List<Project> listBySystem(UUID systemId) {
         return projectRepository.findBySystemId(systemId);
     }
 
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public Project update(UUID id, UpdateProjectRequest request) {
         Project project = projectRepository.findById(id).orElseThrow(AppException::notFound);
 
@@ -80,6 +87,7 @@ public class ProjectService {
     }
 
     @Transactional
+    @CacheEvict(value = "projects", allEntries = true)
     public void delete(UUID id) {
         if (!projectRepository.existsById(id)) {
             throw AppException.notFound();
