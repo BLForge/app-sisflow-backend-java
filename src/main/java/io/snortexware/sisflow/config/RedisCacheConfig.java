@@ -1,5 +1,6 @@
 package io.snortexware.sisflow.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +14,12 @@ import java.time.Duration;
 
 @Configuration
 public class RedisCacheConfig {
+
+    private final ObjectMapper objectMapper;
+
+    public RedisCacheConfig(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @Bean
     RedisCacheConfiguration redisCacheConfiguration() {
@@ -42,7 +49,8 @@ public class RedisCacheConfig {
     }
 
     private RedisCacheConfiguration baseConfiguration(Duration ttl) {
-        GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer();
+        GenericJackson2JsonRedisSerializer serializer =
+                new GenericJackson2JsonRedisSerializer(objectMapper.copy());
 
         return RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(ttl)

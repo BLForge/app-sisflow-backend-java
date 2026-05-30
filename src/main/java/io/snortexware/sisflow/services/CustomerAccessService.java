@@ -7,6 +7,8 @@ import io.snortexware.sisflow.repositories.CustomerAccessRepository;
 import io.snortexware.sisflow.repositories.CustomerRepository;
 import io.snortexware.sisflow.security.exceptions.AppException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,11 +23,13 @@ public class CustomerAccessService {
     private final CustomerAccessRepository customerAccessRepository;
     private final CustomerRepository customerRepository;
 
+    @Cacheable(value = "customerAccesses", key = "@cacheKeyService.tenantKey(#customerId)")
     public List<CustomerAccess> list(UUID customerId) {
         return customerAccessRepository.findByCustomerIdOrderByCreatedAtAsc(customerId);
     }
 
     @Transactional
+    @CacheEvict(value = "customerAccesses", allEntries = true)
     public CustomerAccess create(UUID customerId, CreateCustomerAccessRequest request) {
         Customer customer = customerRepository.findById(customerId).orElseThrow(AppException::notFound);
 
@@ -44,6 +48,7 @@ public class CustomerAccessService {
     }
 
     @Transactional
+    @CacheEvict(value = "customerAccesses", allEntries = true)
     public void delete(UUID customerId, UUID id) {
         CustomerAccess access = customerAccessRepository.findById(id).orElseThrow(AppException::notFound);
         if (!access.getCustomer().getId().equals(customerId)) {

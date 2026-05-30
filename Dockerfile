@@ -15,7 +15,8 @@ RUN groupadd --system sisflow && useradd --system --gid sisflow --create-home si
 WORKDIR /app
 
 COPY --from=build /app/target/sisflow-0.0.1-SNAPSHOT.jar app.jar
-RUN chown sisflow:sisflow /app/app.jar
+RUN mkdir -p /app/uploads \
+    && chown -R sisflow:sisflow /app
 USER sisflow
 
 EXPOSE 9090

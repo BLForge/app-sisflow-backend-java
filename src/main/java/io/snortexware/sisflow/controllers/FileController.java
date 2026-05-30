@@ -1,6 +1,10 @@
 package io.snortexware.sisflow.controllers;
 
+import io.snortexware.sisflow.dto.CreateDownloadTokenRequest;
+import io.snortexware.sisflow.dto.DownloadTokenResponse;
 import io.snortexware.sisflow.security.exceptions.AppException;
+import io.snortexware.sisflow.services.FileDownloadTokenService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +26,8 @@ import java.util.UUID;
 @RequestMapping("/files")
 @RequiredArgsConstructor
 public class FileController {
+
+    private final FileDownloadTokenService fileDownloadTokenService;
 
     @Value("${app.base.url}")
     private String baseUrl;
@@ -88,5 +94,12 @@ public class FileController {
                 .toFile(filePath.toFile());
 
         return ResponseEntity.ok(Map.of("url", baseUrl + "/files/" + bucket + "/" + filename));
+    }
+
+    @PostMapping("/download-token")
+    public ResponseEntity<DownloadTokenResponse> createDownloadToken(
+            @Valid @RequestBody CreateDownloadTokenRequest request,
+            @AuthenticationPrincipal UUID callerId) {
+        return ResponseEntity.ok(fileDownloadTokenService.issueToken(callerId, request));
     }
 }
