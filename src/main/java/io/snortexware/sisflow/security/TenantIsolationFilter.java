@@ -8,6 +8,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,8 @@ import java.util.UUID;
 @Slf4j
 @Component
 public class TenantIsolationFilter implements Filter {
+
+    private static final String ACCESS_COOKIE = "sisflow_access";
 
     private final JwtService jwtService;
     private final TenantContext tenantContext;
@@ -56,13 +59,11 @@ public class TenantIsolationFilter implements Filter {
                 return;
             }
 
-            String auth = req.getHeader("Authorization");
-            if (auth == null || !auth.startsWith("Bearer ")) {
+            String token = resolveToken(req);
+            if (token == null) {
                 chain.doFilter(request, response);
                 return;
             }
-
-            String token = auth.substring(7);
             UUID userId;
             try {
                 userId = jwtService.getUserIdFromToken(token);
@@ -110,5 +111,24 @@ public class TenantIsolationFilter implements Filter {
     private boolean isPublicPath(String path) {
         for (String p : PUBLIC_PATHS) if (path.startsWith(p)) return true;
         return false;
+    }
+
+    private String resolveToken(HttpServletRequest request) {
+        String auth = request.getHeader("Authorization");
+        if (auth != null && auth.startsWith("Bearer ")) {
+            return auth.substring(7);
+        }
+
+        if (request.getCookies() == null) {
+            return null;
+        }
+
+        for (Cookie cookie : request.getCookies()) {
+            if (ACCESS_COOKIE.equals(cookie.getName()) && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+                return cookie.getValue();
+            }
+        }
+
+        return null;
     }
 }

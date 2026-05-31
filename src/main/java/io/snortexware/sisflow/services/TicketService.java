@@ -9,6 +9,9 @@ import io.snortexware.sisflow.entities.Sla;
 import io.snortexware.sisflow.entities.Ticket;
 import io.snortexware.sisflow.entities.TicketStatusConfig;
 import io.snortexware.sisflow.entities.UserProfile;
+import io.snortexware.sisflow.notifications.RabbitTicketNotificationPublisher;
+import io.snortexware.sisflow.notifications.TicketNotificationMessage;
+import io.snortexware.sisflow.notifications.TicketNotificationType;
 import io.snortexware.sisflow.repositories.CustomerRepository;
 import io.snortexware.sisflow.repositories.SlaRepository;
 import io.snortexware.sisflow.repositories.TicketRepository;
@@ -39,6 +42,7 @@ public class TicketService {
     private final JdbcTemplate jdbcTemplate;
     private final AuthorizationService authorizationService;
     private final TenantContext tenantContext;
+    private final RabbitTicketNotificationPublisher ticketNotificationPublisher;
 
     @Transactional
     public Ticket createTicket(CreateTicketRequest req, UUID callerId) {
@@ -218,6 +222,20 @@ public class TicketService {
             interactionRequest.setMessage(request.getReason());
             interactionRequest.setInternal(true);
             ticketInteractionService.post(ticketId, callerId, interactionRequest);
+        }
+
+        if (!targetAgent.getId().equals(oldAssignedToId)) {
+            ticketNotificationPublisher.publish(new TicketNotificationMessage(
+                    TicketNotificationType.TRANSFERRED_TICKET,
+                    targetAgent.getId(),
+                    saved.getId(),
+                    saved.getCode(),
+                    saved.getTitle(),
+                    request.getReason(),
+                    caller.getId(),
+                    caller.getName(),
+                    OffsetDateTime.now()
+            ));
         }
 
         return saved;

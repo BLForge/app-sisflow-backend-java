@@ -16,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +34,9 @@ public class AuthApplicationService {
 
     @Value("${jwt.refresh-expiration-days:30}")
     private long refreshExpirationDays;
+
+    @Value("${jwt.expiration-ms:3600000}")
+    private long accessExpirationMs;
 
     @Value("${email.confirmation.expiration-hours:24}")
     private long confirmationExpirationHours;
@@ -174,6 +178,16 @@ public class AuthApplicationService {
         return issueTokens(refreshToken.getUserId(), tenantId);
     }
 
+    @Transactional
+    public void logout(String rawRefreshToken) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            return;
+        }
+
+        authPersistence.findRefreshToken(rawRefreshToken)
+                .ifPresent(authPersistence::deleteRefreshToken);
+    }
+
     private String issueConfirmationToken(UUID userId) {
         EmailConfirmationToken token = new EmailConfirmationToken();
         token.setUserId(userId);
@@ -200,6 +214,14 @@ public class AuthApplicationService {
                 "refreshToken", refreshToken.getToken(),
                 "expiresIn", 3600
         );
+    }
+
+    public Duration accessTokenLifetime() {
+        return Duration.ofMillis(accessExpirationMs);
+    }
+
+    public Duration refreshTokenLifetime() {
+        return Duration.ofDays(refreshExpirationDays);
     }
 
     private String clientIp(HttpServletRequest request) {

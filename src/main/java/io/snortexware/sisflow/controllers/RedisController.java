@@ -30,7 +30,7 @@ public class RedisController extends BaseController {
 
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health(@AuthenticationPrincipal UUID callerId) {
-        requireDeveloper(callerId);
+        requireAdmin(callerId);
         return ResponseEntity.ok(redisAdminService.health());
     }
 
@@ -38,7 +38,7 @@ public class RedisController extends BaseController {
     public ResponseEntity<List<String>> keys(
             @RequestParam(required = false) String pattern,
             @AuthenticationPrincipal UUID callerId) {
-        requireDeveloper(callerId);
+        requireAdmin(callerId);
         return ResponseEntity.ok(redisAdminService.listKeys(pattern));
     }
 
@@ -46,7 +46,7 @@ public class RedisController extends BaseController {
     public ResponseEntity<Map<String, Object>> value(
             @RequestParam String key,
             @AuthenticationPrincipal UUID callerId) {
-        requireDeveloper(callerId);
+        requireAdmin(callerId);
         if (!redisAdminService.exists(key)) {
             throw AppException.notFound();
         }
