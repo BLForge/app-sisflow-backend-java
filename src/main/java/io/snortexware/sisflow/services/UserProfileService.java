@@ -46,7 +46,7 @@ public class UserProfileService {
                     .id(callerId)
                     .name(name)
                     .avatarUrl(avatarUrl)
-                    .role(UserProfile.Role.agent)
+                    .role(UserProfile.Role.client)
                     .createdAt(OffsetDateTime.now())
                     .build();
             return userProfileRepository.save(profile);
@@ -62,14 +62,16 @@ public class UserProfileService {
     }
 
     public List<UserProfile> listCustomerUsers(UUID customerId) {
+        validateCustomerTenant(customerId);
         return userProfileRepository.findByCustomerId(customerId);
     }
 
 	public UserProfile linkUserToCustomer(UUID customerId, String userIdRaw) {
 		UUID userId = parseUUID(userIdRaw);
 
-		Customer customer = customerRepository.findById(customerId).orElseThrow(AppException::notFound);
+		Customer customer = validateCustomerTenant(customerId);
 		UserProfile userProfile = userProfileRepository.findById(userId).orElseThrow(AppException::notFound);
+        validateUserTenant(userProfile);
 
 		if (userProfile.getCustomer() != null)
 			throw AppException.conflict();
@@ -124,4 +126,22 @@ public class UserProfileService {
 			throw AppException.badRequest();
 		}
 	}
+
+    private Customer validateCustomerTenant(UUID customerId) {
+        Customer customer = customerRepository.findById(customerId).orElseThrow(AppException::notFound);
+
+        UUID callerTenant = tenantContext.getCurrentTenant();
+        if (callerTenant != null && (customer.getTenant() == null || !callerTenant.equals(customer.getTenant().getId()))) {
+            throw AppException.forbidden();
+        }
+
+        return customer;
+    }
+
+    private void validateUserTenant(UserProfile userProfile) {
+        UUID callerTenant = tenantContext.getCurrentTenant();
+        if (callerTenant != null && userProfile.getTenant() != null && !callerTenant.equals(userProfile.getTenant().getId())) {
+            throw AppException.forbidden();
+        }
+    }
 }

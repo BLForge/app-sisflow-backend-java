@@ -4,6 +4,7 @@ import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,9 +23,21 @@ public class RabbitTopologyConfig {
     }
 
     @Bean
-    Binding authEmailBinding(Queue notificationEmailQueue,
+    Binding authEmailBinding(@Qualifier("notificationEmailQueue") Queue notificationEmailQueue,
                              DirectExchange notificationsExchange,
                              @Value("${notifications.email.routing-key}") String routingKey) {
         return BindingBuilder.bind(notificationEmailQueue).to(notificationsExchange).with(routingKey);
+    }
+
+    @Bean
+    Queue notificationTicketQueue(@Value("${notifications.ticket.queue}") String queueName) {
+        return new Queue(queueName, true);
+    }
+
+    @Bean
+    Binding ticketBinding(@Qualifier("notificationTicketQueue") Queue notificationTicketQueue,
+                          DirectExchange notificationsExchange,
+                          @Value("${notifications.ticket.routing-key}") String routingKey) {
+        return BindingBuilder.bind(notificationTicketQueue).to(notificationsExchange).with(routingKey);
     }
 }
