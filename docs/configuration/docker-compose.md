@@ -1,16 +1,5 @@
 # Docker Compose Environment
 
-Arquivo alvo: `~/Documents/Projects/.env.docker`
-
-Este arquivo e usado pela stack raiz em `~/Documents/Projects/docker-compose.yml`.
-
-## Como subir
-
-```bash
-cd ~/Documents/Projects
-docker compose --env-file .env.docker up -d --build
-```
-
 ## Observacao importante
 
 A stack raiz **nao** consome `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` ou `SPRING_DATASOURCE_PASSWORD` diretamente no backend.
